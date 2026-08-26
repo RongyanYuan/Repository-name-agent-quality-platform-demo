@@ -1,0 +1,63 @@
+<h2>首页看板布局：三个独立指标 Section</h2>
+<p class="subtitle">不是新增页面。所有内容都在“质量总览”首页纵向排列，每个 section 都有总指标、趋势线和可下钻子指标。</p>
+
+<div class="mockup">
+  <div class="mockup-header">质量总览 · Homepage Dashboard</div>
+  <div class="mockup-body">
+    <div class="mock-nav">固定侧栏 · 时间范围 · Agent Version · 业务类型 · 环境 · 搜索</div>
+    <div style="padding:14px">
+      <div style="border:2px solid #2b6cb0;border-radius:8px;padding:12px;background:#f5faff">
+        <div class="label">NORTH STAR · 用户满意度</div>
+        <div style="display:flex;align-items:flex-end;gap:18px">
+          <strong style="font-size:30px">74%</strong>
+          <span style="color:#667085">最终接受的合格产物 / 全部产物</span>
+        </div>
+        <div class="mock-content" style="height:54px;margin-top:10px">↗ ──╮──╯──╮────╯──╮── 用户满意度趋势线 · 点击下钻到接受/负反馈 Task</div>
+      </div>
+
+      <div style="margin-top:14px;border-top:3px solid #138a5b;padding-top:10px">
+        <div class="label">QUALITY GATE · 合格产物</div>
+        <div style="display:grid;grid-template-columns:180px 1fr;gap:12px">
+          <div class="placeholder"><strong style="font-size:25px">82%</strong><br>合格产物率<br><small>总指标</small></div>
+          <div class="mock-content" style="height:82px">↗ ──╮────╯──╮──╯──╮── 合格产物率趋势线<br><small>子指标：结果类型 · 意图 · 约束 · 准确性 · 文件有效性</small></div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:8px">
+          <div class="placeholder">类型<br><strong>91%</strong></div>
+          <div class="placeholder">意图<br><strong>88%</strong></div>
+          <div class="placeholder">约束<br><strong>86%</strong></div>
+          <div class="placeholder">准确<br><strong>83%</strong></div>
+          <div class="placeholder">文件<br><strong>94%</strong></div>
+        </div>
+      </div>
+
+      <div style="margin-top:14px;border-top:3px solid #bd6b13;padding-top:10px">
+        <div class="label">PROCESS QUALITY · 过程效率</div>
+        <div style="display:grid;grid-template-columns:180px 1fr;gap:12px">
+          <div class="placeholder"><strong style="font-size:25px">68%</strong><br>过程效率达标率<br><small>总指标</small></div>
+          <div class="mock-content" style="height:82px">↗ ──╯──╮──╯────╮── 过程效率趋势线<br><small>子指标：时延效率 · Token/成本 · 必要 Loop · Skill/Tool · Retry/Recovery</small></div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:8px">
+          <div class="placeholder">时延<br><strong>71%</strong></div>
+          <div class="placeholder">Token<br><strong>66%</strong></div>
+          <div class="placeholder">必要 Loop<br><strong>79%</strong></div>
+          <div class="placeholder">选择<br><strong>84%</strong></div>
+          <div class="placeholder" style="border-color:#e6b566;background:#fffaf0">有效但低效<br><strong>14%</strong></div>
+        </div>
+      </div>
+
+      <div style="margin-top:14px;border-top:1px dashed #9aa9ba;padding-top:10px">
+        <div class="label">MODULE DIAGNOSTICS · 诊断</div>
+        <div class="mock-content" style="height:58px">Task Understanding · Decision · Context · Memory · Skill · Tool · Retry · Recovery<br><small>PASS / FAIL / DERIVED_FAIL / UNKNOWN / N/A · 首错 Root Cause</small></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>交互约束</h3>
+  <ul>
+    <li>点击任一总指标或子指标：进入现有 Task / Trace，并带入失败过滤。</li>
+    <li>每个 section 的趋势线使用同一时间范围、版本、业务和环境筛选。</li>
+    <li>“有效但低效”显示在过程效率 section 内，但用 Warning 色突出，表示诊断比例。</li>
+  </ul>
+</div>

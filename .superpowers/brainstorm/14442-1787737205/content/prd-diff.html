@@ -1,0 +1,73 @@
+<h2>评测体系改版：先确认主线</h2>
+<p class="subtitle">左侧是当前 Demo 的主闭环，右侧是新 PRD 要求的一期主线。点击你更想采用的改造策略。</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">Current Demo · Quality Platform</div>
+    <div class="mockup-body">
+      <div class="mock-nav">质量总览 · 性能监控 · Task/Trace · Case · Dataset · Benchmark · 配置</div>
+      <div style="padding:16px">
+        <div class="label">Current emphasis</div>
+        <h3>Metric → Trace → Case → Dataset → Benchmark</h3>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px">
+          <div class="placeholder">Outcome KPI<br><strong>Intent 94%</strong></div>
+          <div class="placeholder">Process KPI<br><strong>Memory 100%</strong></div>
+          <div class="placeholder">Latency<br><strong>P95 21.9s</strong></div>
+        </div>
+        <div class="mock-content" style="margin-top:12px">Task detail → Result Eval → Trace Timeline → Human Override</div>
+      </div>
+    </div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-header">New PRD · Satisfaction-led Eval</div>
+    <div class="mockup-body">
+      <div class="mock-nav">用户满意 · 有效产物 · 模块评测 · 线上监控 · Case/Dataset/Regression</div>
+      <div style="padding:16px">
+        <div class="label">New north star</div>
+        <h3>有效产物门槛 → 用户接受信号 → 根因治理</h3>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px">
+          <div class="placeholder">有效产物<br><strong>82%</strong></div>
+          <div class="placeholder">首轮接受<br><strong>61%</strong></div>
+          <div class="placeholder">最终接受<br><strong>74%</strong></div>
+          <div class="placeholder">负反馈<br><strong>9%</strong></div>
+        </div>
+        <div class="mock-content" style="margin-top:12px">Task detail → 五态 Judge → 局部 Evidence → First Failure → 用户行为</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="options" data-multiselect>
+  <div class="option" data-choice="strategy-a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>在现有七页 IA 上做增量改造（推荐）</h3>
+      <p>保留当前 Metric → Trace → Case → Dataset → Benchmark 导航，只替换主指标口径、Task/Trace 数据模型和性能/风控分区。风险最低，能最大化复用已经完成的交互闭环。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="strategy-b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>重构为“满意度漏斗 + 模块评测”双主导航</h3>
+      <p>把用户满意度、有效产物、模块状态和线上监控提升到一级入口；Case/Dataset/Regression 作为治理工作区。产品叙事最贴合 PRD，但需要较大信息架构调整。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="strategy-c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>先做数据模型和评测配置，页面延后</h3>
+      <p>优先落地五态 Eval、局部 Evidence、Root Cause Attribution、接受信号和指标公式；先不改视觉页面。长期最稳，但短期无法直观看到新 PRD 的产品变化。</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>PRD 中需要你确认的 5 个口径</h3>
+  <ul>
+    <li>复杂度一期采用 Simple/Complex，还是保留 Medium 兼容展示？</li>
+    <li>时延是“有效产物”的硬门槛，还是独立效率指标？</li>
+    <li>“文件有效性”是否替换当前“结果可用性”，还是两者同时保留？</li>
+    <li>TTFT、风控/商业化拦截是否纳入一期可视化？</li>
+    <li>Memory 暂无正式 KPI 时，是否只展示节点状态和 UNKNOWN/证据？</li>
+  </ul>
+</div>

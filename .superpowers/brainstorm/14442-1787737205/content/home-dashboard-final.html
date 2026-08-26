@@ -1,0 +1,53 @@
+<h2>最终首页看板方案：北极星 + 两个综合总指标</h2>
+<p class="subtitle">这是最终口径：过程效率不符业务预期率的分母为全部产物，名称也已更新。仍然是现有网站首页的独立 section，不新增网页。</p>
+
+<div class="mockup">
+  <div class="mockup-header">质量总览 · Final Homepage Dashboard</div>
+  <div class="mockup-body">
+    <div class="mock-nav">固定侧栏 · 全局时间/版本/业务/环境筛选 · 搜索</div>
+    <div style="padding:14px">
+      <div style="border:2px solid #2b6cb0;border-radius:8px;padding:12px;background:#f5faff">
+        <div class="label">NORTH STAR · 用户满意度</div>
+        <div style="display:flex;align-items:flex-end;gap:18px"><strong style="font-size:30px">74%</strong><span style="color:#667085">最终接受的合格产物 / 全部产物</span></div>
+        <div class="mock-content" style="height:54px;margin-top:10px">↗ ──╮──╯──╮────╯──╮── 用户满意度趋势线 · 点击下钻接受/负反馈 Task</div>
+      </div>
+
+      <div style="margin-top:14px;border-top:3px solid #138a5b;padding-top:10px">
+        <div class="label">QUALITY GATE · 合格产物</div>
+        <div style="display:grid;grid-template-columns:180px 1fr;gap:12px">
+          <div class="placeholder"><strong style="font-size:25px">82%</strong><br>合格产物率<br><small>综合总指标</small></div>
+          <div class="mock-content" style="height:82px">↗ ──╮────╯──╮──╯──╮── 合格产物率趋势线<br><small>子指标：结果类型 · 意图 · 约束 · 准确性 · 文件有效性</small></div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:8px">
+          <div class="placeholder">类型<br><strong>91%</strong></div><div class="placeholder">意图<br><strong>88%</strong></div><div class="placeholder">约束<br><strong>86%</strong></div><div class="placeholder">准确性<br><strong>83%</strong></div><div class="placeholder">文件有效性<br><strong>94%</strong></div>
+        </div>
+      </div>
+
+      <div style="margin-top:14px;border-top:3px solid #bd6b13;padding-top:10px">
+        <div class="label">PROCESS QUALITY · 过程效率</div>
+        <div style="display:grid;grid-template-columns:180px 1fr;gap:12px">
+          <div class="placeholder"><strong style="font-size:25px">68%</strong><br>过程效率达标率<br><small>综合总指标</small></div>
+          <div class="mock-content" style="height:82px">↗ ──╯──╮──╯────╮── 过程效率达标率趋势线<br><small>子指标：时延效率 · Token/成本 · 必要 Loop · Skill/Tool · Retry/Recovery</small></div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:8px">
+          <div class="placeholder">时延效率<br><strong>71%</strong></div><div class="placeholder">Token/成本<br><strong>66%</strong></div><div class="placeholder">必要 Loop<br><strong>79%</strong></div><div class="placeholder">Skill/Tool<br><strong>84%</strong></div><div class="placeholder" style="border-color:#e6b566;background:#fffaf0">过程效率不符业务预期率<br><strong>14%</strong><br><small>全部产物为分母</small></div>
+        </div>
+      </div>
+
+      <div style="margin-top:14px;border-top:1px dashed #9aa9ba;padding-top:10px">
+        <div class="label">MODULE DIAGNOSTICS · 诊断</div>
+        <div class="mock-content" style="height:58px">Task Understanding · Decision · Context · Memory · Skill · Tool · Retry · Recovery<br><small>PASS / FAIL / DERIVED_FAIL / UNKNOWN / N/A · 首错 Root Cause</small></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>最终交付验收</h3>
+  <ul>
+    <li>只修改现有首页看板结构，不新增一个指标网页；七个现有页面继续可用。</li>
+    <li>每个总指标、子指标和趋势线都支持下钻，并继承全局筛选。</li>
+    <li>“过程效率不符业务预期率”只在过程效率 section 内展示，分母为全部产物。</li>
+    <li>1440px、1024px、390px 截图检查；检测标题、按钮、表格和卡片文字不溢出、不重叠、不被截断。</li>
+  </ul>
+</div>
