@@ -301,6 +301,73 @@ export const getQualifiedProductMetrics = (data: QualityData, filters: FilterSta
 
 export const getQualifiedProductRate = getQualifiedProductMetrics
 
+export type QualifiedProductLayerId = 'office' | 'other'
+
+export interface QualifiedProductLayerMetric {
+  id: QualifiedProductLayerId
+  label: 'Office 产物' | '其他产物'
+  evaluator: string
+  productTypes: string[]
+  allProducts: number
+  qualifiedProducts: number
+  qualifiedRate: number
+  averageScore: number | null
+  passCount: number
+  failCount: number
+  unknownCount: number
+  reasons: Array<{ label: string; count: number }>
+  sourceTaskIds: string[]
+  trend: number[]
+}
+
+const OFFICE_BUSINESS_TYPES = new Set(['PPT', 'Excel', 'Word'])
+
+/** Layer qualified-product results by the evaluator coverage defined in the PRD. */
+export const getQualifiedProductLayers = (data: QualityData, filters: FilterState): QualifiedProductLayerMetric[] => {
+  const tasks = filterTasks(data, filters)
+  const definitions: Array<{ id: QualifiedProductLayerId; label: QualifiedProductLayerMetric['label']; evaluator: string; productTypes: string[]; matches: (task: Task) => boolean }> = [
+    { id: 'office', label: 'Office 产物', evaluator: 'Office Eval Agent', productTypes: ['PPT', 'Excel', 'Word'], matches: (task) => OFFICE_BUSINESS_TYPES.has(task.businessType) },
+    { id: 'other', label: '其他产物', evaluator: '通用规则评测', productTypes: ['Coding', 'General'], matches: (task) => !OFFICE_BUSINESS_TYPES.has(task.businessType) }
+  ]
+  return definitions.map((definition, index) => {
+    const scoped = tasks.filter(definition.matches)
+    const validity = scoped.map((task) => task.productValidity)
+    const qualified = scoped.filter((task) => task.productValidity?.qualified === true || (!task.productValidity && task.status !== 'Failed'))
+    const scores = validity.map((item) => item?.score).filter((score): score is number => typeof score === 'number')
+    const reasonMap = new Map<string, number>()
+    scoped.forEach((task) => {
+      const item = task.productValidity
+      if (item?.qualified) return
+      const failedDimensions = [
+        ['交付类型偏差', item?.outcomeType],
+        ['用户意图偏差', item?.intentConsistency],
+        ['约束缺失', item?.constraintSatisfaction],
+        ['准确性异常', item?.accuracy],
+        ['文件有效性异常', item?.fileValidity ?? item?.resultUsability]
+      ].filter(([, status]) => status !== 'PASS' && status !== undefined).map(([label]) => label as string)
+      ;(failedDimensions.length ? failedDimensions : [item?.reason ?? '缺少结果评测证据']).forEach((reason) => reasonMap.set(reason, (reasonMap.get(reason) ?? 0) + 1))
+    })
+    const unknownCount = scoped.filter((task) => !task.productValidity || [task.productValidity.outcomeType, task.productValidity.intentConsistency, task.productValidity.constraintSatisfaction, task.productValidity.accuracy, task.productValidity.fileValidity].some((status) => status === 'UNKNOWN' || status === 'N/A')).length
+    const qualifiedRate = roundRate(qualified.length, scoped.length)
+    return {
+      id: definition.id,
+      label: definition.label,
+      evaluator: definition.evaluator,
+      productTypes: definition.productTypes,
+      allProducts: scoped.length,
+      qualifiedProducts: qualified.length,
+      qualifiedRate,
+      averageScore: scores.length ? Math.round((scores.reduce((sum, score) => sum + score, 0) / scores.length) * 100) / 100 : null,
+      passCount: qualified.length,
+      failCount: Math.max(0, scoped.length - qualified.length),
+      unknownCount,
+      reasons: [...reasonMap.entries()].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, 4),
+      sourceTaskIds: scoped.map((task) => task.id),
+      trend: trendFor(qualifiedRate, index + 11)
+    }
+  })
+}
+
 export interface ProcessEfficiencyChildMetric {
   id: string
   label: string

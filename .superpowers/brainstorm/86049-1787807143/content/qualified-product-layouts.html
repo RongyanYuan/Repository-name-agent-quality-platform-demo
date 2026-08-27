@@ -1,0 +1,33 @@
+<h2>合格产物分层方案</h2>
+<p class="subtitle">Office 产物由评测 Agent 返回评分、是否合格和原因；其他产物使用通用规则评测。请选择更符合首页看板习惯的布局。</p>
+
+<div class="options" data-multiselect>
+  <div class="option" data-choice="parallel" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>并列分层卡片</h3>
+      <p>总合格产物率置顶，下方左右并列 Office / 其他产物。每层同时展示通过率、平均评分、通过数、未通过数和原因分布。</p>
+      <div class="mockup">
+        <div class="mockup-header">合格产物 · 24 个产物</div>
+        <div class="mockup-body" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="placeholder"><b>Office 产物</b><br><strong>86.4%</strong><br><small>评测 Agent · 评分 0.82 · 通过 19 / 未通过 3</small><br><small>原因：意图偏差 · 文件格式 · 约束缺失</small></div>
+          <div class="placeholder"><b>其他产物</b><br><strong>91.7%</strong><br><small>通用规则 · 通过 11 / 未通过 1</small><br><small>原因：结果类型 · 准确性</small></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="tabs" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>分层 Tab</h3>
+      <p>总合格产物率置顶，Office / 其他产物通过 Tab 切换查看，适合信息密度更高的首页。</p>
+      <div class="mockup">
+        <div class="mockup-header">合格产物 · 24 个产物</div>
+        <div class="mockup-body">
+          <div class="mock-nav">Office 产物　 其他产物</div>
+          <div class="placeholder"><b>Office 产物</b><br><strong>86.4%</strong><br><small>评分 0.82 · 通过 / 未通过 · 评测原因可下钻</small></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

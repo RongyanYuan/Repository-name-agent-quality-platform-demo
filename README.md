@@ -28,3 +28,5 @@ All data is deterministic Mock Data and local to the browser session. No product
 `/overview` · `/performance` · `/anomaly-monitoring` · `/tasks` · `/cases` · `/datasets` · `/benchmarks` · `/evaluation-config`
 
 首页模块诊断展示节点五态计数、首错次数、派生失败次数和 Evidence 覆盖，不把多条 Trace 的异常比例当作模块质量分数。合格产物与过程效率的子指标支持收起/展开；异常监控页承载原始监控信号和可下钻异常。
+
+合格产物按层级拆分为 Office（PPT / Excel / Word，由 Office Eval Agent 返回评分、通过状态和原因）与其他产物（Coding / General，由通用规则评测）。收起子指标时，两层摘要仍然可见。

@@ -65,4 +65,16 @@ describe('quality overview v2 dashboard', () => {
     expect(screen.queryByRole('button', { name: /总时延效率/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /过程效率达标率/ })).toBeVisible()
   })
+
+  it('plans qualified products in Office and other product layers', () => {
+    renderOverview()
+    expect(screen.getByRole('heading', { name: 'Office 产物' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '其他产物' })).toBeVisible()
+    expect(screen.getByText('Office Eval Agent')).toBeVisible()
+    expect(screen.getByText('通用规则评测')).toBeVisible()
+    expect(screen.getAllByText(/平均评分/).length).toBe(2)
+    expect(screen.getAllByText(/通过/).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText(/未通过/).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('评测原因')).toBeVisible()
+  })
 })

@@ -56,6 +56,7 @@ import {
   getModuleDiagnostics,
   getPerformanceMetrics,
   getProcessEfficiencyMetrics,
+  getQualifiedProductLayers,
   getQualifiedProductMetrics,
   getRootCauseMetrics,
   getScopeLabel,
@@ -63,6 +64,7 @@ import {
   getTraceByTask,
   getUserSatisfactionMetrics
 } from './selectors'
+import type { QualifiedProductLayerMetric } from './selectors'
 import { useContextNavigation } from './layout'
 import { useQuality } from './store'
 import { TraceTimeline as SharedTraceTimeline } from './trace'
@@ -187,6 +189,23 @@ function ModuleDiagnosticCard({ nodeType, status, stateCounts, evidenceCoverage,
   </button>
 }
 
+function QualifiedProductLayer({ layer, expanded, onToggle, onOpen }: { layer: QualifiedProductLayerMetric; expanded: boolean; onToggle: () => void; onOpen: () => void }) {
+  return <section className="min-w-0 rounded-md border border-line bg-slate-50/60 p-3" aria-labelledby={`${layer.id}-qualified-title`}>
+    <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+      <div className="min-w-0"><h3 id={`${layer.id}-qualified-title`} className="break-words text-sm font-semibold text-ink">{layer.label}</h3><p className="mt-1 text-[11px] text-muted">{layer.productTypes.join(' / ')} · {layer.evaluator}</p></div>
+      <Button size="sm" icon={ArrowRight} onClick={onOpen}>查看明细</Button>
+    </div>
+    <div className="mt-3 grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4">
+      <MiniMetric label="合格率" value={layer.allProducts ? `${layer.qualifiedRate.toFixed(1)}%` : 'N/A'} tone={layer.allProducts ? (layer.qualifiedRate >= 80 ? 'pass' : 'warn') : 'neutral'} note={layer.allProducts ? `${layer.qualifiedProducts} / ${layer.allProducts}` : '暂无样本'} />
+      <MiniMetric label="平均评分" value={layer.averageScore === null ? 'UNKNOWN' : layer.averageScore.toFixed(2)} note={layer.allProducts ? layer.evaluator : '基线未建立'} />
+      <MiniMetric label="通过" value={layer.passCount} tone="pass" note="Eval Agent 通过" />
+      <MiniMetric label="未通过" value={layer.failCount} tone={layer.failCount ? 'fail' : 'neutral'} note={layer.unknownCount ? `UNKNOWN ${layer.unknownCount}` : '已判定'} />
+    </div>
+    <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-2"><p className="text-[10px] text-muted">原因分布</p><button type="button" aria-label={`${expanded ? '收起' : '展开'}${layer.label}评测原因`} aria-expanded={expanded} onClick={onToggle} className="text-[11px] font-medium text-accent hover:underline">{expanded ? '收起原因' : '展开原因'}</button></div>
+    {expanded && <div className="mt-2 space-y-1.5">{layer.reasons.length ? layer.reasons.map((reason) => <button key={reason.label} type="button" onClick={onOpen} className="flex w-full items-center justify-between gap-2 rounded border border-line bg-white px-2.5 py-2 text-left text-[11px] hover:border-accent/40"><span className="min-w-0 break-words text-ink">{reason.label}</span><span className="shrink-0 font-semibold text-fail">{reason.count}</span></button>) : <p className="text-[11px] text-muted">暂无未通过原因</p>}</div>}
+  </section>
+}
+
 export function OverviewPage() {
   const { state } = useQuality()
   const { navigateContext } = useContextNavigation()
@@ -194,6 +213,7 @@ export function OverviewPage() {
   const [processExpanded, setProcessExpanded] = useState(true)
   const satisfaction = getUserSatisfactionMetrics(state, state.filters)
   const qualifiedProduct = getQualifiedProductMetrics(state, state.filters)
+  const qualifiedLayers = getQualifiedProductLayers(state, state.filters)
   const processEfficiency = getProcessEfficiencyMetrics(state, state.filters)
   const outOfExpectation = getInefficientExpectedRate(state, state.filters)
   const moduleDiagnostics = getModuleDiagnostics(state, state.filters)
@@ -243,6 +263,8 @@ export function OverviewPage() {
         <OverviewMetricCard id={qualifiedProduct.id} label={qualifiedProduct.label} value={qualifiedProduct.value} trend={qualifiedProduct.trend} numerator={qualifiedProduct.numerator} denominator={qualifiedProduct.denominator} description="五个结果门槛全部 PASS 的产物比例" tone="info" featured onClick={() => openMetric(qualifiedProduct.id)} />
         {qualifiedExpanded && <div id="qualified-product-children" className="contents">{qualifiedProduct.children.map((metric) => <OverviewMetricCard key={metric.id} id={metric.id} label={metric.label} value={metric.value} trend={metric.trend} numerator={metric.pass} denominator={qualifiedProduct.denominator} description={qualifiedDescriptions[metric.id] ?? '结果评测子维度'} tone={metric.fail > 0 ? 'neutral' : 'pass'} onClick={() => openMetric(metric.id)} />)}</div>}
       </div>
+      <div className="mt-4"><SectionHeader level={3} title="评测原因" description="点击原因可下钻对应 Task / Trace；原因来自各层评测器返回的失败维度。" /></div>
+      <div className="mt-3 grid min-w-0 gap-3 lg:grid-cols-2">{qualifiedLayers.map((layer) => <QualifiedProductLayer key={layer.id} layer={layer} expanded={qualifiedExpanded} onToggle={() => setQualifiedExpanded((value) => !value)} onOpen={() => navigateContext('/tasks', { params: { metric: layer.id === 'office' ? 'qualified-product-office' : 'qualified-product-other' } })} />)}</div>
     </Panel>
 
     <Panel labelledBy="process-efficiency-title">

@@ -74,3 +74,14 @@
 - [x] Document the module diagnostic semantics, collapsible child metrics, anomaly-monitoring route and all UNKNOWN/baseline rules.
 - [x] Run `CI=1 pnpm run lint`, `CI=1 pnpm run build`, `CI=1 pnpm test`, and `CI=1 pnpm run test:e2e`.
 - [x] Start the local Vite demo on port 4174 and inspect all eight routes for visible headings, working navigation and no text overlap.
+
+### Task 6: Office and other product qualification layers
+
+**Files:**
+- Modify: `src/selectors.ts`, `src/qualityPages.tsx`, `README.md`, `docs/superpowers/specs/2026-08-26-agent-observability-v3-design.md`
+- Test: `src/homeDashboard.test.tsx`
+
+- [x] Add Office (PPT / Excel / Word) and other (Coding / General) layers, showing evaluator, score, pass/fail counts and reasons.
+- [x] Preserve the section-level child metric collapse button while keeping layer summaries visible.
+- [x] Treat a layer with zero scoped products as `N/A / 暂无样本`, not as a zero qualification rate.
+- [x] Run the full unit, lint, build and Playwright suites.
