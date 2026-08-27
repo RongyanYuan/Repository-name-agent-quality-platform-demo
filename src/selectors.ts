@@ -463,6 +463,10 @@ const matchesSearch = (task: Task, search: string) => {
 }
 
 export const filterTasks = (data: QualityData, filters: FilterState): Task[] => data.tasks.filter((task) => {
+  const rangeHours: Record<FilterState['timeRange'], number> = { '24h': 24, '7d': 7 * 24, '14d': 14 * 24, '30d': 30 * 24 }
+  const latestTimestamp = data.tasks.reduce((latest, candidate) => Math.max(latest, Date.parse(candidate.timestamp) || 0), 0)
+  const taskTimestamp = Date.parse(task.timestamp)
+  const matchesTimeRange = !latestTimestamp || !Number.isFinite(taskTimestamp) || taskTimestamp >= latestTimestamp - rangeHours[filters.timeRange] * 60 * 60 * 1000
   const resultFail = task.evals.some((evaluation) => effectiveEvalStatus(evaluation) === 'FAIL')
   const matchesStatus = !filters.status || filters.status === task.status || filters.status === (resultFail ? 'FAIL' : 'PASS')
   const matchesVersion = filters.agentVersion === 'All Versions' || task.agentVersion === filters.agentVersion
@@ -517,7 +521,7 @@ export const filterTasks = (data: QualityData, filters: FilterState): Task[] => 
   )
   const matchesValidity = !filters.validity || (validity ? [validity.outcomeType, validity.intentConsistency, validity.constraintSatisfaction, validity.accuracy, validity.fileValidity].includes(filters.validity) : false)
   const matchesProcess = !filters.processStatus || (filters.processStatus === 'out_of_expectation' ? process?.outOfExpectation === true : [process?.totalLatencyEfficiency, process?.tokenEfficiency, process?.costEfficiency, process?.necessaryLoop, process?.skillToolSelection, process?.toolResult, process?.retryEffectiveness, process?.recoverySuccess].includes(filters.processStatus))
-  return matchesStatus && matchesVersion && matchesBusiness && matchesEnvironment && matchesOutcome && matchesComplexity && matchesRootCause && matchesSkill && matchesBadcase && matchesGolden && matchesMetric && matchesTool && matchesInterceptionReason && matchesAcceptance && matchesValidity && matchesProcess && matchesSearch(task, filters.search)
+  return matchesTimeRange && matchesStatus && matchesVersion && matchesBusiness && matchesEnvironment && matchesOutcome && matchesComplexity && matchesRootCause && matchesSkill && matchesBadcase && matchesGolden && matchesMetric && matchesTool && matchesInterceptionReason && matchesAcceptance && matchesValidity && matchesProcess && matchesSearch(task, filters.search)
 })
 
 export interface KpiMetric {

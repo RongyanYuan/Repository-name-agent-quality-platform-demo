@@ -310,10 +310,13 @@ export function DashboardLayout({ children }: { children?: ReactNode }) {
   const previousFiltersRef = useRef(state.filters)
 
   // Restore URL filters on browser refresh and on Back/Breadcrumb navigation.
+  // This effect must only react to URL changes. Watching state.filters here
+  // races with the state -> URL effect below and can overwrite a fresh user
+  // selection with the previous URL for one render (or indefinitely).
   useEffect(() => {
     const urlFilters = parseFilters(location.search)
     if (!filtersEqual(urlFilters, state.filters)) dispatch({ type: 'SET_FILTERS', filters: urlFilters })
-  }, [dispatch, location.search, state.filters])
+  }, [dispatch, location.search])
 
   // Keep all known filter values serializable while preserving detail IDs and
   // page-specific query parameters owned by the route.

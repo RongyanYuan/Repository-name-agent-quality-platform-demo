@@ -91,4 +91,11 @@ describe('selectors', () => {
     const filters = { ...defaultFilters, businessType: 'PPT' as const, agentVersion: 'agent-2.5.0', search: 'trace-001', rootCause: 'Memory' as const, badcase: 'yes' as const }
     expect(parseFilters(`?${serializeFilters(filters)}`)).toMatchObject(filters)
   })
+
+  it('applies the selected time window to task data', () => {
+    const sevenDays = filterTasks(qualityData, { ...defaultFilters, timeRange: '7d' })
+    const oneDay = filterTasks(qualityData, { ...defaultFilters, timeRange: '24h' })
+    expect(sevenDays.length).toBeGreaterThan(oneDay.length)
+    expect(oneDay.length).toBeGreaterThan(0)
+  })
 })

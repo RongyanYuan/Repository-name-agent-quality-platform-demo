@@ -41,6 +41,10 @@ const skills = ['ppt-builder', 'spreadsheet-analyst', 'doc-writer', 'code-review
 const models = ['gpt-5.2', 'gpt-5.3-mini', 'gpt-5.2-high']
 const toolNames = ['slides.render', 'sheets.read', 'docs.export', 'browser.fetch', 'code.patch']
 
+// Keep the fixture timestamps inside the 7-day default window while leaving
+// a meaningful subset for the 24-hour filter.
+const timestampForTask = (index: number) => new Date(Date.parse(NOW) - (index % 6) * 24 * 60 * 60 * 1000 - (index % 9) * 60 * 60 * 1000).toISOString()
+
 type TaskSeed = {
   businessType: Exclude<(typeof BUSINESS_TYPES)[number], 'All'>
   complexity: (typeof COMPLEXITIES)[number]
@@ -351,7 +355,7 @@ const makeTrace = (taskId: string, traceId: string, seed: TaskSeed, index: numbe
     id: traceId,
     taskId,
     sessionId,
-    startedAt: `2026-08-24T${String(8 + (index % 9)).padStart(2, '0')}:${String((index * 7) % 60).padStart(2, '0')}:00.000Z`,
+    startedAt: timestampForTask(index),
     totalLatency: observations.reduce((sum, observation) => sum + observation.latency, 0),
     observations
   }
