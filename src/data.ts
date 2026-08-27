@@ -447,12 +447,15 @@ const makePerformance = (latency: number, taskIndex: number, tokens: number, too
   const inputTokens = Math.round(tokens * 0.62)
   const outputTokens = tokens - inputTokens
   const ttftMs = taskIndex % 5 === 0 ? undefined : 280 + (taskIndex * 73) % 1400
+  const expectedTtftMs = ttftMs === undefined ? undefined : 220 + (taskIndex * 41) % 760
   const cacheHit = taskIndex % 4 !== 1
   const toolFailures = traceObservations.filter((item) => item.tool && item.status === 'FAIL').length
+  const costDeviation = taskIndex % 6 === 0 ? undefined : Math.round(((taskIndex % 5) - 2) * 8.5 * 10) / 10
   return {
     actualLatencyMs: latency,
     expectedLatencyMs: taskIndex % 7 === 0 ? undefined : Math.round(latency / (1.05 + (taskIndex % 4) * 0.25)),
     ttftMs,
+    expectedTtftMs,
     inputTokens,
     outputTokens,
     cacheHit,
@@ -460,7 +463,9 @@ const makePerformance = (latency: number, taskIndex: number, tokens: number, too
     toolCallFrequency: toolCalls / Math.max(1, latency / 1000),
     oneShotToolSuccess: toolCalls === 0 ? null : retryCount === 0 && toolFailures === 0,
     throughputTokensPerSecond: latency > 0 ? Math.round((tokens / (latency / 1000)) * 10) / 10 : undefined,
-    costDeviation: taskIndex % 6 === 0 ? undefined : Math.round(((taskIndex % 5) - 2) * 8.5 * 10) / 10,
+    costDeviation,
+    inputCostDeviation: costDeviation === undefined ? undefined : Math.round((costDeviation + ((taskIndex % 3) - 1) * 2.5) * 10) / 10,
+    outputCostDeviation: costDeviation === undefined ? undefined : Math.round((costDeviation + ((taskIndex % 4) - 1.5) * 3) * 10) / 10,
     modelVersion: models[taskIndex % models.length]
   }
 }

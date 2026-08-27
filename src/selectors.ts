@@ -65,6 +65,7 @@ export const metricDimensionMap: Record<string, string> = {
   'latency-band': 'Latency Efficiency',
   'tool-frequency': 'Tool Frequency',
   'one-shot-success': 'One-shot Success',
+  'ttft-efficiency': 'TTFT Efficiency',
   'efficient-task': 'Effective but Inefficient',
   'task-understanding': 'Task Understanding',
   'execution-path': 'Execution Path',
@@ -495,13 +496,18 @@ export const filterTasks = (data: QualityData, filters: FilterState): Task[] => 
                 metricDimension === 'Risk Interception' ? Boolean(task.riskCommercialEvents?.some((event) => event.type === 'risk_interception' && event.blocked)) :
                   metricDimension === 'Commercial Interception' ? Boolean(task.riskCommercialEvents?.some((event) => event.type === 'commercial_interception' && event.blocked)) :
                     metricDimension === 'Tool Frequency' ? task.toolCalls > 0 :
-                      metricDimension === 'One-shot Success' ? task.performance?.oneShotToolSuccess === false :
+              metricDimension === 'One-shot Success' ? task.performance?.oneShotToolSuccess === false :
+              metricDimension === 'TTFT Efficiency' ? (() => {
+                const performance = task.performance
+                return performance?.ttftMs !== undefined && performance.expectedTtftMs !== undefined && performance.ttftMs / performance.expectedTtftMs > 1.5
+              })() :
               task.evals.concat(task.processEvals).some((evaluation) => {
                     const evaluationDimension = metricDimension === 'Result Usability' ? 'Result Usability' : metricDimension
                     return evaluation.dimension === evaluationDimension && effectiveEvalStatus(evaluation) === 'FAIL'
                   })
   )
   const matchesTool = !filters.anomalyTool || data.traces.some((trace) => trace.id === task.traceId && trace.observations.some((observation) => observation.tool === filters.anomalyTool))
+  const matchesInterceptionReason = !filters.interceptionReason || Boolean(task.riskCommercialEvents?.some((event) => event.reason === filters.interceptionReason))
   const matchesAcceptance = !filters.acceptanceSignal || (
     filters.acceptanceSignal === 'first_accept' ? acceptance.firstAccept :
       filters.acceptanceSignal === 'final_accept' ? acceptance.finalAccept :
@@ -511,7 +517,7 @@ export const filterTasks = (data: QualityData, filters: FilterState): Task[] => 
   )
   const matchesValidity = !filters.validity || (validity ? [validity.outcomeType, validity.intentConsistency, validity.constraintSatisfaction, validity.accuracy, validity.fileValidity].includes(filters.validity) : false)
   const matchesProcess = !filters.processStatus || (filters.processStatus === 'out_of_expectation' ? process?.outOfExpectation === true : [process?.totalLatencyEfficiency, process?.tokenEfficiency, process?.costEfficiency, process?.necessaryLoop, process?.skillToolSelection, process?.toolResult, process?.retryEffectiveness, process?.recoverySuccess].includes(filters.processStatus))
-  return matchesStatus && matchesVersion && matchesBusiness && matchesEnvironment && matchesOutcome && matchesComplexity && matchesRootCause && matchesSkill && matchesBadcase && matchesGolden && matchesMetric && matchesTool && matchesAcceptance && matchesValidity && matchesProcess && matchesSearch(task, filters.search)
+  return matchesStatus && matchesVersion && matchesBusiness && matchesEnvironment && matchesOutcome && matchesComplexity && matchesRootCause && matchesSkill && matchesBadcase && matchesGolden && matchesMetric && matchesTool && matchesInterceptionReason && matchesAcceptance && matchesValidity && matchesProcess && matchesSearch(task, filters.search)
 })
 
 export interface KpiMetric {
@@ -692,13 +698,13 @@ export interface PerformanceMetrics {
   taskCount: number
   latencyBands: LatencyBandMetric[]
   totalLatencyEfficiency: { value: number; rate: number; status: JudgeStatus; sourceTaskIds: string[] }
-  ttft: { value: number | null; status: JudgeStatus; averageMs: number | null; sourceTaskIds: string[] }
+  ttft: { value: number | null; status: JudgeStatus; averageMs: number | null; efficiencyRatio: number | null; sourceTaskIds: string[] }
   throughput: { tokensPerSecond: number; sourceTaskIds: string[] }
   tokens: { input: number; output: number; total: number; sourceTaskIds: string[] }
   cache: { hits: number; misses: number; hitRate: number; sourceTaskIds: string[] }
   toolFrequency: { calls: number; perTask: number; perSecond: number; sourceTaskIds: string[] }
   oneShotSuccess: { successes: number; eligible: number; rate: number; sourceTaskIds: string[] }
-  cost: { evaluatedProducts: number; total: number; average: number; deviation: number | null; sourceTaskIds: string[] }
+  cost: { evaluatedProducts: number; total: number; average: number; deviation: number | null; inputDeviation: number | null; outputDeviation: number | null; sourceTaskIds: string[] }
   risk: { blocked: number; rate: number; reasons: Record<string, number>; sourceTaskIds: string[] }
   commercial: { blocked: number; rate: number; reasons: Record<string, number>; sourceTaskIds: string[] }
 }
@@ -722,6 +728,11 @@ export const getPerformanceMetrics = (data: QualityData, filters: FilterState): 
   const targetPass = targetRows.filter((task) => task.processEfficiency?.targetMet === true)
   const ttftRows = tasks.filter((task) => performanceForTask(task)?.ttftMs !== undefined)
   const ttftValues = ttftRows.map((task) => performanceForTask(task)?.ttftMs ?? 0)
+  const ttftEfficiencyRows = tasks.filter((task) => performanceForTask(task)?.ttftMs !== undefined && performanceForTask(task)?.expectedTtftMs !== undefined)
+  const ttftEfficiencyRatios = ttftEfficiencyRows.map((task) => {
+    const item = performanceForTask(task)!
+    return (item.ttftMs ?? 0) / (item.expectedTtftMs ?? 1)
+  })
   const allInput = performance.reduce((sum, item) => sum + (item?.inputTokens ?? 0), 0)
   const allOutput = performance.reduce((sum, item) => sum + (item?.outputTokens ?? 0), 0)
   const allTokens = allInput + allOutput
@@ -733,6 +744,8 @@ export const getPerformanceMetrics = (data: QualityData, filters: FilterState): 
   const successfulProducts = tasks.filter((task) => task.productValidity?.qualified === true || (task.productValidity === undefined && task.status !== 'Failed'))
   const totalCost = successfulProducts.reduce((sum, task) => sum + task.cost, 0)
   const costDeviations = successfulProducts.map((task) => performanceForTask(task)?.costDeviation).filter((item): item is number => item !== undefined)
+  const inputCostDeviations = successfulProducts.map((task) => performanceForTask(task)?.inputCostDeviation).filter((item): item is number => item !== undefined)
+  const outputCostDeviations = successfulProducts.map((task) => performanceForTask(task)?.outputCostDeviation).filter((item): item is number => item !== undefined)
   const taskIds = new Set(tasks.map((task) => task.id))
   const events = (data.riskCommercialEvents ?? tasks.flatMap((task) => task.riskCommercialEvents ?? [])).filter((event) => taskIds.has(event.taskId))
   const riskEvents = events.filter((event) => event.type === 'risk_interception' && event.blocked)
@@ -742,13 +755,13 @@ export const getPerformanceMetrics = (data: QualityData, filters: FilterState): 
     taskCount: tasks.length,
     latencyBands,
     totalLatencyEfficiency: { value: roundRate(targetPass.length, targetRows.length), rate: roundRate(targetPass.length, targetRows.length), status: targetRows.length ? targetPass.length === targetRows.length ? 'PASS' : 'FAIL' : 'UNKNOWN', sourceTaskIds: targetRows.map((task) => task.id) },
-    ttft: { value: ttftValues.length ? Math.round(ttftValues.reduce((sum, value) => sum + value, 0) / ttftValues.length) : null, status: ttftValues.length ? 'PASS' : 'UNKNOWN', averageMs: ttftValues.length ? Math.round(ttftValues.reduce((sum, value) => sum + value, 0) / ttftValues.length) : null, sourceTaskIds: ttftRows.map((task) => task.id) },
+    ttft: { value: ttftValues.length ? Math.round(ttftValues.reduce((sum, value) => sum + value, 0) / ttftValues.length) : null, status: ttftEfficiencyRatios.length ? ttftEfficiencyRatios.reduce((sum, value) => sum + value, 0) / ttftEfficiencyRatios.length <= 1.5 ? 'PASS' : 'FAIL' : 'UNKNOWN', averageMs: ttftValues.length ? Math.round(ttftValues.reduce((sum, value) => sum + value, 0) / ttftValues.length) : null, efficiencyRatio: ttftEfficiencyRatios.length ? Math.round((ttftEfficiencyRatios.reduce((sum, value) => sum + value, 0) / ttftEfficiencyRatios.length) * 100) / 100 : null, sourceTaskIds: ttftRows.map((task) => task.id) },
     throughput: { tokensPerSecond: totalLatencyMs ? Math.round((allTokens / (totalLatencyMs / 1000)) * 10) / 10 : 0, sourceTaskIds: tasks.map((task) => task.id) },
     tokens: { input: allInput, output: allOutput, total: allTokens, sourceTaskIds: tasks.map((task) => task.id) },
     cache: { hits: cacheHits, misses: Math.max(0, cacheRows.length - cacheHits), hitRate: roundRate(cacheHits, cacheRows.length), sourceTaskIds: tasks.filter((task) => performanceForTask(task)?.cacheHit !== undefined).map((task) => task.id) },
     toolFrequency: { calls: tasks.reduce((sum, task) => sum + task.toolCalls, 0), perTask: tasks.length ? Math.round((tasks.reduce((sum, task) => sum + task.toolCalls, 0) / tasks.length) * 100) / 100 : 0, perSecond: totalLatencyMs ? Math.round((tasks.reduce((sum, task) => sum + task.toolCalls, 0) / (totalLatencyMs / 1000)) * 100) / 100 : 0, sourceTaskIds: tasks.filter((task) => task.toolCalls > 0).map((task) => task.id) },
     oneShotSuccess: { successes: oneShotTasks.length, eligible: toolEligible.length, rate: roundRate(oneShotTasks.length, toolEligible.length), sourceTaskIds: toolEligible.map((task) => task.id) },
-    cost: { evaluatedProducts: successfulProducts.length, total: Number(totalCost.toFixed(3)), average: successfulProducts.length ? Number((totalCost / successfulProducts.length).toFixed(3)) : 0, deviation: costDeviations.length ? Math.round((costDeviations.reduce((sum, value) => sum + value, 0) / costDeviations.length) * 10) / 10 : null, sourceTaskIds: successfulProducts.map((task) => task.id) },
+    cost: { evaluatedProducts: successfulProducts.length, total: Number(totalCost.toFixed(3)), average: successfulProducts.length ? Number((totalCost / successfulProducts.length).toFixed(3)) : 0, deviation: costDeviations.length ? Math.round((costDeviations.reduce((sum, value) => sum + value, 0) / costDeviations.length) * 10) / 10 : null, inputDeviation: inputCostDeviations.length ? Math.round((inputCostDeviations.reduce((sum, value) => sum + value, 0) / inputCostDeviations.length) * 10) / 10 : null, outputDeviation: outputCostDeviations.length ? Math.round((outputCostDeviations.reduce((sum, value) => sum + value, 0) / outputCostDeviations.length) * 10) / 10 : null, sourceTaskIds: successfulProducts.map((task) => task.id) },
     risk: { blocked: riskEvents.length, rate: roundRate(riskEvents.length, tasks.length), reasons: reasonCounts(riskEvents), sourceTaskIds: [...new Set(riskEvents.map((event) => event.taskId))] },
     commercial: { blocked: commercialEvents.length, rate: roundRate(commercialEvents.length, tasks.length), reasons: reasonCounts(commercialEvents), sourceTaskIds: [...new Set(commercialEvents.map((event) => event.taskId))] }
   }
@@ -871,7 +884,7 @@ export const parseFilters = (search: string): FilterState => {
   if (timeRange && ['24h', '7d', '14d', '30d'].includes(timeRange)) result.timeRange = timeRange
   if (businessType && (BUSINESS_TYPES as readonly string[]).includes(businessType)) result.businessType = businessType as FilterState['businessType']
   if (environment && (ENVIRONMENTS as readonly string[]).includes(environment)) result.environment = environment as FilterState['environment']
-  for (const key of ['agentVersion', 'search', 'status', 'outcomeType', 'complexity', 'rootCause', 'skill', 'badcase', 'golden', 'metric', 'anomalyTool', 'anomalyWindow', 'acceptanceSignal', 'validity', 'processStatus', 'benchmarkId'] as const) {
+  for (const key of ['agentVersion', 'search', 'status', 'outcomeType', 'complexity', 'rootCause', 'skill', 'badcase', 'golden', 'metric', 'anomalyTool', 'anomalyWindow', 'interceptionReason', 'acceptanceSignal', 'validity', 'processStatus', 'benchmarkId'] as const) {
     const value = params.get(key)
     if (value) (result as unknown as Record<string, unknown>)[key] = value
   }

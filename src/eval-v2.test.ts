@@ -130,8 +130,18 @@ describe('Office Agent eval v2 selectors', () => {
   })
 
   it('round-trips v2 URL filters', () => {
-    const filters = { ...defaultFilters, acceptanceSignal: 'negative_feedback' as const, validity: 'FAIL' as const, processStatus: 'out_of_expectation' as const, benchmarkId: 'benchmark-2026-08-24' }
+    const filters = { ...defaultFilters, acceptanceSignal: 'negative_feedback' as const, validity: 'FAIL' as const, processStatus: 'out_of_expectation' as const, benchmarkId: 'benchmark-2026-08-24', interceptionReason: 'Potentially sensitive content detected' }
     expect(parseFilters(`?${serializeFilters(filters)}`)).toMatchObject(filters)
+  })
+
+  it('drills TTFT and interception reason signals to the matching tasks', () => {
+    const ttftTasks = filterTasks(qualityData, { ...defaultFilters, metric: 'ttft-efficiency' })
+    expect(ttftTasks.every((task) => task.performance?.ttftMs !== undefined && task.performance.expectedTtftMs !== undefined && task.performance.ttftMs / task.performance.expectedTtftMs > 1.5)).toBe(true)
+    const reason = qualityData.riskCommercialEvents?.[0]?.reason
+    expect(reason).toBeTruthy()
+    const reasonTasks = filterTasks(qualityData, { ...defaultFilters, interceptionReason: reason })
+    expect(reasonTasks.length).toBeGreaterThan(0)
+    expect(reasonTasks.every((task) => task.riskCommercialEvents?.some((event) => event.reason === reason))).toBe(true)
   })
 })
 

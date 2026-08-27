@@ -25,6 +25,8 @@ The demo keeps result evaluation, process evaluation and performance signals sep
 
 Mock data contains 61 Tasks and 30+ governance Cases across PPT, Excel, Word, Coding and General, with all three complexity levels, three task outcomes, ten root-cause categories, five judge states, missing TTFT/latency/cost baselines, Tool/Retry/Recovery boundaries, acceptance behavior variants, risk/commercial interception, and Golden/Historical/Challenge datasets.
 
+异常监控页按 PRD 展示总时延与 TTFT 效率、模型吞吐、Input/Output Token 与成本偏离、缓存命中、Model/Tool 调用明细、一次执行成功率、Retry/Loop、Tool P50/P95 与 7/14 日基线，以及风控/商业化拦截率和原因分布。
+
 All data is deterministic Mock Data and local to the browser session. No production APIs, database, credentials or real LLM Judge are used. The eight routes are:
 
 `/overview` · `/performance` · `/anomaly-monitoring` · `/tasks` · `/cases` · `/datasets` · `/benchmarks` · `/evaluation-config`

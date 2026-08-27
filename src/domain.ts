@@ -355,6 +355,7 @@ export interface TaskPerformance {
   actualLatencyMs: number
   expectedLatencyMs?: number
   ttftMs?: number
+  expectedTtftMs?: number
   inputTokens?: number
   outputTokens?: number
   cacheHit?: boolean
@@ -363,6 +364,8 @@ export interface TaskPerformance {
   oneShotToolSuccess?: boolean | null
   throughputTokensPerSecond?: number
   costDeviation?: number
+  inputCostDeviation?: number
+  outputCostDeviation?: number
   modelVersion?: string
 }
 
@@ -493,6 +496,7 @@ export interface FilterState {
   metric?: string
   anomalyTool?: string
   anomalyWindow?: string
+  interceptionReason?: string
   acceptanceSignal?: ProductAcceptanceEventType | 'first_accept' | 'final_accept' | 'repeat_correction' | 'negative_feedback'
   validity?: JudgeStatus
   processStatus?: JudgeStatus | 'out_of_expectation'

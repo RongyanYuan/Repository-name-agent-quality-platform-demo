@@ -68,7 +68,8 @@ export const FILTER_KEYS = [
   'golden',
   'metric',
   'anomalyTool',
-  'anomalyWindow'
+  'anomalyWindow',
+  'interceptionReason'
 ] as const
 
 export const DETAIL_KEYS = ['taskId', 'traceId', 'caseId', 'datasetId', 'entryId', 'benchmarkId', 'comparison', 'bucket'] as const
@@ -152,12 +153,13 @@ function GlobalFilterBar() {
     filters.badcase ? `Badcase：${filters.badcase === 'yes' ? '是' : '否'}` : undefined,
     filters.golden ? `Golden：${filters.golden === 'yes' ? '是' : '否'}` : undefined,
     filters.anomalyTool ? `异常 Tool：${filters.anomalyTool}` : undefined,
-    filters.anomalyWindow ? `异常窗口：${filters.anomalyWindow}` : undefined
+    filters.anomalyWindow ? `异常窗口：${filters.anomalyWindow}` : undefined,
+    filters.interceptionReason ? `拦截原因：${filters.interceptionReason}` : undefined
   ].filter((value): value is string => Boolean(value))
 
   const clearDrilldownFilters = () => {
     const params = new URLSearchParams(location.search)
-    const keys = ['status', 'outcomeType', 'complexity', 'rootCause', 'skill', 'badcase', 'golden', 'metric', 'anomalyTool', 'anomalyWindow', 'acceptanceSignal', 'validity', 'processStatus', 'benchmarkId'] as const
+    const keys = ['status', 'outcomeType', 'complexity', 'rootCause', 'skill', 'badcase', 'golden', 'metric', 'anomalyTool', 'anomalyWindow', 'interceptionReason', 'acceptanceSignal', 'validity', 'processStatus', 'benchmarkId'] as const
     keys.forEach((key) => params.delete(key))
     dispatch({ type: 'SET_FILTERS', filters: Object.fromEntries(keys.map((key) => [key, undefined])) })
     const search = params.toString()
