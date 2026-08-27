@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { qualityData } from './data'
 import type { Observation } from './domain'
 import { CasesPage, DatasetsPage } from './governancePages'
+import { TasksPage } from './qualityPages'
 import { QualityProvider } from './store'
 import { TraceTimeline } from './trace'
 
@@ -14,7 +15,7 @@ const renderPage = (page: React.ReactNode, route: string) => render(
 )
 
 describe('v2 trace timeline', () => {
-  it('shows the Memory root failure, derived Context chain and local rubric evidence', () => {
+  it('shows the Memory root failure while keeping full Context assembly as non-evaluated evidence', () => {
     const task = qualityData.tasks.find((candidate) => candidate.id === 'task-001')
     const trace = qualityData.traces.find((candidate) => candidate.id === task?.traceId)
     const { container } = render(<TraceTimeline trace={trace} evidence={qualityData.evidence} />)
@@ -26,10 +27,9 @@ describe('v2 trace timeline', () => {
     expect(memory).toHaveAttribute('data-judge-status', 'FAIL')
     expect(memory).toHaveAttribute('data-root-cause', 'true')
     expect(within(memory as HTMLElement).getByText('is_root_cause')).toBeVisible()
-    expect(context).toHaveAttribute('data-judge-status', 'DERIVED_FAIL')
-    expect(within(context as HTMLElement).getByText('DERIVED_FAIL')).toBeVisible()
-    expect(within(context as HTMLElement).getByText(/derived_from: Memory/)).toBeVisible()
-    expect(within(context as HTMLElement).getByText(/Context Assembly local evidence requires review/)).toBeVisible()
+    expect(context).toHaveAttribute('data-judge-status', 'N/A')
+    expect(within(context as HTMLElement).getByText('N/A')).toBeVisible()
+    expect(within(context as HTMLElement).getByText(/Context is assembled in full/)).toBeVisible()
   })
 
   it('keeps UNKNOWN and N/A explicit instead of inferring failure from output text', () => {
@@ -55,28 +55,52 @@ describe('v2 trace timeline', () => {
   })
 })
 
+describe('v2 judge provenance in Task detail', () => {
+  it('shows LLM Judge reason, root evidence and the matched rubric rule', () => {
+    renderPage(<TasksPage />, '/tasks?taskId=task-001')
+    expect(screen.getByRole('dialog', { name: 'Task 001' })).toBeVisible()
+    expect(screen.getAllByText('LLM Judge reason').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Root evidence').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Rubric rule').length).toBeGreaterThan(0)
+    expect(screen.getByText(/最终PPT面向普通员工/)).toBeVisible()
+    expect(screen.getAllByText(/evidence-task-001/)[0]).toBeVisible()
+    expect(screen.getAllByText(/Intent Consistency/)[0]).toBeVisible()
+  })
+
+  it('opens the full session conversation and links each query to its trace', () => {
+    renderPage(<TasksPage />, '/tasks?taskId=task-002')
+    expect(screen.getByRole('dialog', { name: 'Task 002' })).toBeVisible()
+    expect(screen.queryByText(/1 evidence/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /查看 Session session-001/ }))
+    expect(screen.getByRole('heading', { name: 'Session 对话' })).toBeVisible()
+    expect(screen.getAllByRole('button', { name: /Trace trace-/ }).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('用户')[0]).toBeVisible()
+    expect(screen.getAllByText('Agent')[0]).toBeVisible()
+  })
+})
+
 describe('v2 governance provenance', () => {
   it('shows first-failure, user behavior and file-validity evidence in Case review', () => {
     renderPage(<CasesPage />, '/cases')
     fireEvent.click(screen.getByText('根据刚才的销售 Excel 做一份 PPT，这次改成面向管理层。'))
 
-    expect(screen.getByRole('dialog', { name: 'Case review' })).toBeVisible()
-    expect(screen.getByRole('heading', { name: 'Trace first-failure attribution' })).toBeVisible()
+    expect(screen.getByRole('dialog', { name: 'Case 评审' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Trace 首错归因' })).toBeVisible()
     expect(screen.getByText('is_root_cause')).toBeVisible()
-    expect(screen.getByRole('heading', { name: 'User behavior evidence' })).toBeVisible()
-    expect(screen.getByText('File Validity')).toBeVisible()
-    expect(screen.getByText('Golden Label candidate')).toBeVisible()
+    expect(screen.getByRole('heading', { name: '用户行为 Evidence' })).toBeVisible()
+    expect(screen.getByText('文件有效性')).toBeVisible()
+    expect(screen.getByText('Golden Label 候选')).toBeVisible()
   })
 
   it('shows Golden Label, File Validity, source Trace and version history in Dataset entry review', () => {
     renderPage(<DatasetsPage />, '/datasets')
     fireEvent.click(screen.getByText('根据刚才的销售 Excel 做一份 PPT，这次改成面向管理层。'))
 
-    expect(screen.getByRole('dialog', { name: 'Dataset entry' })).toBeVisible()
-    expect(screen.getByText('Golden Label')).toBeVisible()
-    expect(screen.getByText('File Validity')).toBeVisible()
-    expect(screen.getByText('Source Trace')).toBeVisible()
-    expect(screen.getByRole('heading', { name: 'Source & version history' })).toBeVisible()
+    expect(screen.getByRole('dialog', { name: 'Dataset 条目' })).toBeVisible()
+    expect(screen.getAllByText('Golden Label')[0]).toBeVisible()
+    expect(screen.getByText('文件有效性')).toBeVisible()
+    expect(screen.getByText('来源 Trace')).toBeVisible()
+    expect(screen.getByRole('heading', { name: '来源与版本历史' })).toBeVisible()
     expect(screen.getByRole('button', { name: '保存条目' })).toBeEnabled()
   })
 })

@@ -4,6 +4,7 @@ import { JUDGE_STATUSES, PRODUCT_ACCEPTANCE_EVENT_TYPES } from './domain'
 import {
   defaultFilters,
   filterTasks,
+  getAcceptanceSignals,
   getFirstFailureAttribution,
   getInefficientExpectedRate,
   getModuleDiagnostics,
@@ -36,7 +37,7 @@ describe('Office Agent eval v2 fixtures', () => {
     })
   })
 
-  it('keeps Memory as the only first failure and marks Context as derived', () => {
+  it('keeps Memory as the only first failure and treats Context as full-assembly evidence', () => {
     const task = qualityData.tasks.find((item) => item.id === 'task-001')!
     const trace = qualityData.traces.find((item) => item.id === task.traceId)!
     const memory = trace.observations.find((item) => item.nodeType === 'Memory')!
@@ -46,9 +47,9 @@ describe('Office Agent eval v2 fixtures', () => {
     expect(memory.judgeStatus).toBe('FAIL')
     expect(memory.isRootCause).toBe(true)
     expect(memory.metadata).toMatchObject({ query_requirement: '面向管理层', memory_value: '面向普通员工' })
-    expect(context.judgeStatus).toBe('DERIVED_FAIL')
-    expect(context.derivedFrom).toBe('Memory')
-    expect(context.derivedFromObservationId).toBe(memory.id)
+    expect(context.judgeStatus).toBe('N/A')
+    expect(context.derivedFrom).toBeUndefined()
+    expect(context.derivedFromObservationId).toBeUndefined()
     expect(context.isRootCause).toBe(false)
     expect(attribution).toMatchObject({ firstFailureNode: 'Memory', rootCause: 'Memory', firstFailureObservationId: memory.id })
     expect(trace.observations.filter((item) => item.isRootCause)).toHaveLength(1)
@@ -83,6 +84,14 @@ describe('Office Agent eval v2 selectors', () => {
     expect(satisfaction.signals.every((signal) => signal.sourceTaskIds.length === signal.count)).toBe(true)
   })
 
+  it('counts only accepted products that are both qualified and process-effective', () => {
+    const tasks = filterTasks(qualityData, defaultFilters)
+    const expectedValidAccepted = tasks.filter((task) => task.productValidity?.qualified === true && task.processEfficiency?.targetMet === true && getAcceptanceSignals(qualityData, task).accepted)
+    const satisfaction = getUserSatisfactionMetrics(qualityData, defaultFilters)
+    expect(satisfaction.numerator).toBe(expectedValidAccepted.length)
+    expect(satisfaction.acceptedQualifiedProducts).toBe(expectedValidAccepted.length)
+  })
+
   it('counts each first non-derived root once and preserves old metric aliases', () => {
     const roots = getRootCauseMetrics(qualityData, defaultFilters)
     const expectedRootTasks = filterTasks(qualityData, defaultFilters).filter((task) => getFirstFailureAttribution(qualityData, task).rootCause !== 'None')
@@ -93,6 +102,17 @@ describe('Office Agent eval v2 selectors', () => {
     const oldLinkTasks = filterTasks(qualityData, { ...defaultFilters, metric: 'result-usability' })
     const newLinkTasks = filterTasks(qualityData, { ...defaultFilters, metric: 'file-validity' })
     expect(new Set(newLinkTasks.map((task) => task.id))).toEqual(new Set(oldLinkTasks.map((task) => task.id)))
+  })
+
+  it('treats Context as full-assembly evidence instead of a standalone evaluation metric', () => {
+    const diagnostics = getModuleDiagnostics(qualityData, defaultFilters)
+    expect(diagnostics.some((item) => item.nodeType === 'Context Assembly')).toBe(false)
+    const task = qualityData.tasks.find((item) => item.id === 'task-002')!
+    const trace = qualityData.traces.find((item) => item.id === task.traceId)!
+    const context = trace.observations.find((item) => item.nodeType === 'Context Assembly')!
+    expect(context.judgeStatus).toBe('N/A')
+    expect(context.reason).toMatch(/full Context|not evaluated/i)
+    expect(task.evals.some((item) => item.reason?.includes('Context evidence'))).toBe(true)
   })
 
   it('returns raw performance signals and evaluates cost only for qualified products', () => {

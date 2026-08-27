@@ -21,7 +21,7 @@
 
 ### 2.1 北极星：用户满意度
 
-用户满意度置于首页首屏最醒目位置，展示当前值、周期变化、趋势线和组成信号。口径为“最终被用户接受的合格产物 / 全部产物”。
+用户满意度置于首页首屏最醒目位置，展示当前值、周期变化、趋势线和组成信号。口径为“最终被用户接受的有效产物 / 全部产物”，其中有效产物 = 合格产物且过程有效；过程业务预期未建立（UNKNOWN）的产物不计入有效产物。
 
 需要区分以下用户行为：
 
@@ -68,7 +68,7 @@
 
 `PASS / FAIL / DERIVED_FAIL / UNKNOWN / N/A`
 
-每条 Trace 只能有一个首个关键失败 Root Cause。下游由上游传播的失败保留为 `DERIVED_FAIL`，但不重复计入 Root Cause 分布。Context 和 Memory 保留为诊断证据；在当前 PRD 一期不伪造独立正式 KPI。
+每条 Trace 只能有一个首个关键失败 Root Cause。下游由上游传播的失败保留为 `DERIVED_FAIL`，但不重复计入 Root Cause 分布。Context 当前为全量组装，不进行独立评测，也不作为正式 KPI；它只保留 assembly snapshot，并作为 Task Understanding、Decision、Skill 等模块的 Evidence。模块因 Context 污染、缺失或矛盾失败时，LLM Judge 必须在该模块 reason 中说明 Context 影响。Memory 继续作为独立诊断模块。
 
 ## 3. 全站同步变化
 

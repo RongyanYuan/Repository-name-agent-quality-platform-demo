@@ -126,10 +126,28 @@ const seedOverrides: TaskSeed[] = [
   }
 ]
 
-const generatedSeeds: TaskSeed[] = Array.from({ length: 20 }, (_, index) => {
+const boundarySeeds: TaskSeed[] = [
+  { businessType: 'PPT', complexity: 'Simple', status: 'Effective', rootCause: 'None', query: '用公司模板制作一页项目封面。', skill: 'ppt-builder', environment: 'Production' },
+  { businessType: 'General', complexity: 'Simple', status: 'Failed', rootCause: 'Task Understanding', query: '只提取合同中的付款节点，不要改写原文。', skill: 'researcher', environment: 'Production' },
+  { businessType: 'PPT', complexity: 'Complex', status: 'Failed', rootCause: 'Planning / Decision', query: '把多份经营材料合并成董事会汇报并标注决策项。', skill: 'ppt-builder', environment: 'Production' },
+  { businessType: 'Excel', complexity: 'Complex', status: 'Failed', rootCause: 'Memory', query: '根据年度预算表生成部门差异分析。', skill: 'spreadsheet-analyst', environment: 'Production' },
+  { businessType: 'Excel', complexity: 'Simple', status: 'Effective but Inefficient', rootCause: 'Loop / Retry', query: '清理销售表中的重复行并导出结果。', skill: 'spreadsheet-analyst', environment: 'Staging' },
+  { businessType: 'Word', complexity: 'Medium', status: 'Failed', rootCause: 'Skill Internal', query: '把访谈记录整理成带引用的研究纪要。', skill: 'doc-writer', environment: 'Production' },
+  { businessType: 'Word', complexity: 'Complex', status: 'Effective', rootCause: 'None', query: '根据合同草稿生成风险条款摘要。', skill: 'doc-writer', environment: 'Production' },
+  { businessType: 'Coding', complexity: 'Simple', status: 'Effective', rootCause: 'None', query: '为函数补充边界条件说明。', skill: 'code-reviewer', environment: 'Staging' },
+  { businessType: 'Coding', complexity: 'Complex', status: 'Failed', rootCause: 'Tool', query: '修复部署脚本并验证回滚路径。', skill: 'code-reviewer', environment: 'Staging' },
+  { businessType: 'General', complexity: 'Medium', status: 'Failed', rootCause: 'External Engineering', query: '分析接口错误并给出排查优先级。', skill: 'researcher', environment: 'Production' },
+  { businessType: 'General', complexity: 'Simple', status: 'Effective', rootCause: 'None', query: '把零散想法整理成三条行动建议。', skill: 'researcher', environment: 'Production' },
+  { businessType: 'PPT', complexity: 'Medium', status: 'Failed', rootCause: 'Context', query: '沿用上次素材但改成面向客户的产品介绍。', skill: 'ppt-builder', environment: 'Staging' },
+  { businessType: 'Excel', complexity: 'Medium', status: 'Effective', rootCause: 'None', query: '按区域汇总本月订单并标出异常。', skill: 'spreadsheet-analyst', environment: 'Production' }
+]
+
+const generatedSeeds: TaskSeed[] = Array.from({ length: 40 }, (_, index) => {
   const businessType = BUSINESS_TYPES[(index % 5) + 1] as Exclude<(typeof BUSINESS_TYPES)[number], 'All'>
   const complexity = COMPLEXITIES[index % COMPLEXITIES.length]
-  const status: TaskStatus = index % 6 === 0 ? 'Failed' : index % 4 === 0 ? 'Effective but Inefficient' : 'Effective'
+  // Keep the generated set useful for governance views: a healthy majority,
+  // plus enough failures and inefficient successes to exercise every Case tab.
+  const status: TaskStatus = index % 5 === 0 ? 'Failed' : index % 3 === 0 ? 'Effective but Inefficient' : 'Effective'
   const rootCause: RootCause = status === 'Failed'
     ? (['Planning / Decision', 'Memory', 'Tool', 'Skill Internal', 'External Engineering'][index % 5] as RootCause)
     : status === 'Effective but Inefficient'
@@ -152,7 +170,7 @@ const generatedSeeds: TaskSeed[] = Array.from({ length: 20 }, (_, index) => {
   }
 })
 
-const taskSeeds = [...seedOverrides, ...generatedSeeds]
+const taskSeeds = [...seedOverrides, ...boundarySeeds, ...generatedSeeds]
 
 const statusForDimension = (seed: TaskSeed, dimensionIndex: number): EvalStatus => {
   if (seed.status === 'Effective') return dimensionIndex === 3 && seed.complexity === 'Complex' ? 'FAIL' : 'PASS'
@@ -193,11 +211,11 @@ const acceptanceEventsFor = (taskId: string, seed: TaskSeed, index: number): Pro
   // by a new audience requirement and a final acceptance.
   if (taskId === 'task-001') {
     return [
-      { id: `${taskId}-event-1`, taskId, type: 'download', timestamp, sequence: 1, round: 1, source: 'User', note: 'Initial artifact downloaded for review.' },
-      { id: `${taskId}-event-2`, taskId, type: 'correction', timestamp: new Date(Date.parse(timestamp) + 60_000).toISOString(), sequence: 2, round: 1, source: 'User', note: 'Audience needs correction.' },
+      { id: `${taskId}-event-1`, taskId, type: 'download', timestamp, sequence: 1, round: 1, source: 'User', note: '首轮产物已下载，等待复核。' },
+      { id: `${taskId}-event-2`, taskId, type: 'correction', timestamp: new Date(Date.parse(timestamp) + 60_000).toISOString(), sequence: 2, round: 1, source: 'User', note: '用户要求修正受众。' },
       { id: `${taskId}-event-3`, taskId, type: 'new_requirement', timestamp: new Date(Date.parse(timestamp) + 120_000).toISOString(), sequence: 3, round: 2, source: 'User', isNewRequirement: true, note: '改成面向管理层。' },
       { id: `${taskId}-event-4`, taskId, type: 'regeneration', timestamp: new Date(Date.parse(timestamp) + 180_000).toISOString(), sequence: 4, round: 2, source: 'System' },
-      { id: `${taskId}-event-5`, taskId, type: 'accept', timestamp: new Date(Date.parse(timestamp) + 240_000).toISOString(), sequence: 5, round: 2, source: 'User', note: 'Final artifact accepted.' }
+      { id: `${taskId}-event-5`, taskId, type: 'accept', timestamp: new Date(Date.parse(timestamp) + 240_000).toISOString(), sequence: 5, round: 2, source: 'User', note: '最终产物已接受。' }
     ]
   }
   const patterns: ProductAcceptanceEventType[][] = [
@@ -233,50 +251,55 @@ const makeEvidence = (taskId: string, observationId: string, node: ObservationNo
 })
 
 const makeTrace = (taskId: string, traceId: string, seed: TaskSeed, index: number) => {
-  const sessionId = `session-${String(index + 1).padStart(3, '0')}`
+  const sessionId = index < 2 ? 'session-001' : `session-${String(index + 1).padStart(3, '0')}`
   const failNode: ObservationNode | null = seed.rootCause === 'Memory'
     ? 'Memory'
     : seed.rootCause === 'Context'
-      ? 'Context Assembly'
-      : seed.rootCause === 'Tool'
-        ? 'Tool'
-        : seed.rootCause === 'Skill Routing'
-          ? 'Skill Routing'
-          : seed.rootCause === 'Loop / Retry'
-            ? 'Loop / Retry'
-            : seed.rootCause === 'Planning / Decision'
-              ? 'Planning / Decision'
-              : seed.rootCause === 'Skill Internal'
-                ? 'Skill'
-                : seed.rootCause === 'External Engineering'
-                  ? 'Tool'
-                  : null
-  const nodes: ObservationNode[] = ['Task Understanding', 'Planning / Decision', 'Memory', 'Context Assembly', 'Skill Routing', 'Skill', 'Tool']
+      ? 'Planning / Decision'
+      : seed.rootCause === 'Task Understanding'
+        ? 'Task Understanding'
+        : seed.rootCause === 'Tool'
+          ? 'Tool'
+          : seed.rootCause === 'Skill Routing'
+            ? 'Skill Routing'
+            : seed.rootCause === 'Loop / Retry'
+              ? 'Loop / Retry'
+              : seed.rootCause === 'Planning / Decision'
+                ? 'Planning / Decision'
+                : seed.rootCause === 'Skill Internal'
+                  ? 'Skill'
+                  : seed.rootCause === 'External Engineering'
+                    ? 'Tool'
+                    : null
+  const omitMemory = seed.rootCause === 'None' && index % 11 === 0
+  const omitSkill = seed.rootCause === 'None' && index % 13 === 0
+  const omitTool = seed.rootCause === 'None' && index % 7 === 0
+  const nodes: ObservationNode[] = ['Task Understanding', 'Planning / Decision', ...(omitMemory ? [] : ['Memory' as const]), 'Context Assembly', 'Skill Routing', ...(omitSkill ? [] : ['Skill' as const]), ...(omitTool ? [] : ['Tool' as const])]
   if (seed.status !== 'Effective') nodes.push('Loop / Retry')
   nodes.push('Final Outcome')
   const firstFailureSequence = failNode ? nodes.indexOf(failNode) + 1 : -1
   const firstFailureObservationId = firstFailureSequence > 0 ? `obs-${taskId}-${firstFailureSequence}` : undefined
   const observations: Observation[] = nodes.map((nodeType, sequence) => {
-    const isRootFailure = nodeType === failNode
-    const isDerived = seed.rootCause === 'Memory' && nodeType === 'Context Assembly'
-      || seed.rootCause === 'Tool' && nodeType === 'Final Outcome'
+    const isContextEvidence = nodeType === 'Context Assembly'
+    const insufficientEvidence = seed.rootCause === 'None' && index % 10 === 0 && nodeType === 'Memory'
+    const isRootFailure = nodeType === failNode && !isContextEvidence
+    const isDerived = !isContextEvidence && (seed.rootCause === 'Tool' && nodeType === 'Final Outcome'
       || seed.rootCause === 'Context' && nodeType === 'Final Outcome'
-      // Any terminal failure after a known root is a propagation failure. The
-      // selector also re-derives this relationship for imported traces.
-      || Boolean(failNode && nodeType === 'Final Outcome')
-    const failed = isRootFailure || isDerived || (nodeType === 'Final Outcome' && seed.status === 'Failed')
+      // Any terminal failure after a known root is a propagation failure.
+      || Boolean(failNode && nodeType === 'Final Outcome'))
+    const failed = !isContextEvidence && !insufficientEvidence && (isRootFailure || isDerived || (nodeType === 'Final Outcome' && seed.status === 'Failed'))
+    const judgeStatus: JudgeStatus = isContextEvidence ? 'N/A' : insufficientEvidence ? 'UNKNOWN' : isDerived ? 'DERIVED_FAIL' : failed ? 'FAIL' : 'PASS'
     const observationId = `obs-${taskId}-${sequence + 1}`
     return {
       id: observationId,
       traceId,
       sequence: sequence + 1,
       nodeType,
-      // Keep the v1 `status: FAIL` shape for existing renderers while the
-      // explicit v2 `judgeStatus` distinguishes propagated failures.
-      status: failed ? 'FAIL' : 'PASS',
-      judgeStatus: isDerived ? 'DERIVED_FAIL' : failed ? 'FAIL' : 'PASS',
+      // Context is assembled in full but is not independently evaluated.
+      status: judgeStatus,
+      judgeStatus,
       input: `${nodeType} input snapshot for ${taskId}`,
-      output: failed ? `${nodeType} produced an unexpected result` : `${nodeType} completed with expected evidence`,
+      output: isContextEvidence ? 'Full Context assembled for downstream module evaluation.' : insufficientEvidence ? `${nodeType} evidence is insufficient for a local judge.` : failed ? `${nodeType} produced an unexpected result` : `${nodeType} completed with expected evidence`,
       latency: 280 + ((index * 71 + sequence * 113) % 3400),
       model: nodeType === 'Tool' ? undefined : models[(index + sequence) % models.length],
       tool: nodeType === 'Tool' ? toolNames[index % toolNames.length] : undefined,
@@ -286,8 +309,8 @@ const makeTrace = (taskId: string, traceId: string, seed: TaskSeed, index: numbe
       isRootCause: isRootFailure,
     derivedFrom: isDerived ? seed.rootCause : undefined,
       derivedFromObservationId: isDerived ? firstFailureObservationId : undefined,
-      score: failed ? (isDerived ? 0.35 : 0.12) : 0.94,
-      reason: failed ? (isDerived ? `Derived from upstream ${seed.rootCause} failure` : `${nodeType} evidence indicates the first failure`) : `${nodeType} evidence supports PASS`,
+      score: isContextEvidence ? 0 : insufficientEvidence ? 0.5 : failed ? (isDerived ? 0.35 : 0.12) : 0.94,
+      reason: isContextEvidence ? 'Context is assembled in full and is not evaluated as a standalone module; use this snapshot as downstream Evidence.' : insufficientEvidence ? `${nodeType} cannot be judged because local Evidence is insufficient.` : failed ? (isDerived ? `Derived from upstream ${seed.rootCause} failure${seed.rootCause === 'Context' ? '; Context evidence influenced this decision.' : '.'}` : `${nodeType} evidence indicates the first failure${seed.rootCause === 'Context' ? '; Context evidence indicates the assembled context was incomplete or conflicting.' : ''}`) : `${nodeType} evidence supports PASS`,
       error: failed ? `${nodeType} evidence requires review` : undefined,
       metadata: {
         agentVersion: index % 2 === 0 ? VERSION_A : VERSION_B,
@@ -295,25 +318,27 @@ const makeTrace = (taskId: string, traceId: string, seed: TaskSeed, index: numbe
         complexity: seed.complexity
       },
       evidenceIds: [`evidence-${taskId}-${observationId}`],
-      evalResult: isDerived ? 'DERIVED_FAIL' : failed ? 'FAIL' : 'PASS',
+      evalResult: judgeStatus,
       rubricEvidence: [{
         id: `rubric-${observationId}`,
         evidenceId: `evidence-${taskId}-${observationId}`,
         observationId,
-        kind: failed ? 'Error' : 'Output',
-        summary: failed ? `${nodeType} local evidence requires review` : `${nodeType} local evidence supports the judge`,
+        kind: isContextEvidence ? 'Input' : insufficientEvidence ? 'Rule' : failed ? 'Error' : 'Output',
+        summary: isContextEvidence ? 'Full Context assembly snapshot is available as downstream Evidence.' : insufficientEvidence ? 'Local Evidence is insufficient for a confident judge.' : failed ? `${nodeType} local evidence requires review` : `${nodeType} local evidence supports the judge`,
+        requirement: isContextEvidence ? 'Context is full assembly evidence, not a standalone KPI.' : undefined,
         source: 'Trace observation'
       }],
       judgeResult: {
-        status: isDerived ? 'DERIVED_FAIL' : failed ? 'FAIL' : 'PASS',
-        score: failed ? (isDerived ? 0.35 : 0.12) : 0.94,
-        reason: failed ? (isDerived ? `Derived from upstream ${seed.rootCause} failure` : `${nodeType} evidence indicates the first failure`) : `${nodeType} evidence supports PASS`,
+        status: judgeStatus,
+        score: isContextEvidence ? 0 : insufficientEvidence ? 0.5 : failed ? (isDerived ? 0.35 : 0.12) : 0.94,
+        reason: isContextEvidence ? 'Context is assembled in full and is not evaluated as a standalone module; use this snapshot as downstream Evidence.' : insufficientEvidence ? `${nodeType} cannot be judged because local Evidence is insufficient.` : failed ? (isDerived ? `Derived from upstream ${seed.rootCause} failure${seed.rootCause === 'Context' ? '; Context evidence influenced this decision.' : '.'}` : `${nodeType} evidence indicates the first failure${seed.rootCause === 'Context' ? '; Context evidence indicates the assembled context was incomplete or conflicting.' : ''}`) : `${nodeType} evidence supports PASS`,
         rubricEvidence: [{
           id: `rubric-${observationId}`,
           evidenceId: `evidence-${taskId}-${observationId}`,
           observationId,
-          kind: failed ? 'Error' : 'Output',
-          summary: failed ? `${nodeType} local evidence requires review` : `${nodeType} local evidence supports the judge`,
+          kind: isContextEvidence ? 'Input' : insufficientEvidence ? 'Rule' : failed ? 'Error' : 'Output',
+          summary: isContextEvidence ? 'Full Context assembly snapshot is available as downstream Evidence.' : insufficientEvidence ? 'Local Evidence is insufficient for a confident judge.' : failed ? `${nodeType} local evidence requires review` : `${nodeType} local evidence supports the judge`,
+          requirement: isContextEvidence ? 'Context is full assembly evidence, not a standalone KPI.' : undefined,
           source: 'Trace observation'
         }],
         isRootCause: isRootFailure,
@@ -483,17 +508,18 @@ taskSeeds.forEach((seed, index) => {
   const evals: EvalResult[] = RESULT_DIMENSIONS.map((dimension, dimensionIndex) => {
     const status = statusForDimension(seed, dimensionIndex)
     const evidenceId = traceObservations[Math.min(dimensionIndex, traceObservations.length - 1)].evidenceIds[0]
+    const contextNote = seed.rootCause === 'Context' ? ' Context evidence: the full assembled context contains conflicting or incomplete material.' : ''
     return {
       id: `eval-${taskId}-result-${dimensionIndex}`,
       taskId,
       family: 'Result Eval',
       dimension,
       autoStatus: status,
-      autoReason: status === 'PASS' ? `${dimension} meets the seeded rubric` : `${dimension} is contradicted by trace evidence`,
+      autoReason: status === 'PASS' ? `${dimension} meets the seeded rubric${contextNote}` : `${dimension} is contradicted by trace evidence.${contextNote}`,
       evidenceIds: [evidenceId],
       score: status === 'PASS' ? 0.94 : 0.18,
-      reason: status === 'PASS' ? `${dimension} local evidence supports PASS.` : `${dimension} local evidence supports FAIL.`,
-      rubricEvidence: [{ id: `rubric-eval-${taskId}-result-${dimensionIndex}`, evidenceId, observationId: traceObservations[Math.min(dimensionIndex, traceObservations.length - 1)].id, kind: status === 'PASS' ? 'Output' : 'Error', summary: status === 'PASS' ? `${dimension} evidence passed.` : `${dimension} evidence failed.`, source: 'Eval Agent' }],
+      reason: status === 'PASS' ? `${dimension} local evidence supports PASS.${contextNote}` : `${dimension} local evidence supports FAIL.${contextNote}`,
+      rubricEvidence: [{ id: `rubric-eval-${taskId}-result-${dimensionIndex}`, evidenceId, observationId: traceObservations[Math.min(dimensionIndex, traceObservations.length - 1)].id, kind: status === 'PASS' ? 'Output' : 'Error', summary: status === 'PASS' ? `${dimension} evidence passed.` : `${dimension} evidence failed.`, source: 'Eval Agent', requirement: seed.rootCause === 'Context' ? 'Use full Context assembly as Evidence; do not score Context as a standalone KPI.' : `${dimension} rubric requirement.` }],
       status,
       judgeVersion: dimensionIndex % 2 === 0 ? 'rubric-2026.08' : 'judge-5.3'
     }
@@ -502,17 +528,18 @@ taskSeeds.forEach((seed, index) => {
     const fail = seed.status === 'Failed' && (dimensionIndex + index) % 7 === 0
     const status: EvalStatus = fail ? 'FAIL' : 'PASS'
     const evidenceId = traceObservations[Math.min(dimensionIndex, traceObservations.length - 1)].evidenceIds[0]
+    const contextNote = seed.rootCause === 'Context' ? ' Context evidence was reviewed as part of this module decision.' : ''
     return {
       id: `eval-${taskId}-process-${dimensionIndex}`,
       taskId,
       family: 'Process Eval',
       dimension,
       autoStatus: status,
-      autoReason: status === 'PASS' ? 'Process signal is within the seeded rubric' : 'Process signal needs review',
+      autoReason: status === 'PASS' ? `Process signal is within the seeded rubric.${contextNote}` : `Process signal needs review.${contextNote}`,
       evidenceIds: [evidenceId],
       score: status === 'PASS' ? 0.92 : 0.2,
-      reason: status === 'PASS' ? 'Local process evidence supports the judge.' : 'Local process evidence indicates a process exception.',
-      rubricEvidence: [{ id: `rubric-eval-${taskId}-process-${dimensionIndex}`, evidenceId, observationId: traceObservations[Math.min(dimensionIndex, traceObservations.length - 1)].id, kind: status === 'PASS' ? 'Output' : 'Error', summary: status === 'PASS' ? 'Process observation meets the rubric.' : 'Process observation needs review.', source: 'Trace observation' }],
+      reason: status === 'PASS' ? `Local process evidence supports the judge.${contextNote}` : `Local process evidence indicates a process exception.${contextNote}`,
+      rubricEvidence: [{ id: `rubric-eval-${taskId}-process-${dimensionIndex}`, evidenceId, observationId: traceObservations[Math.min(dimensionIndex, traceObservations.length - 1)].id, kind: status === 'PASS' ? 'Output' : 'Error', summary: status === 'PASS' ? 'Process observation meets the rubric.' : 'Process observation needs review.', source: 'Trace observation', requirement: seed.rootCause === 'Context' ? 'Context is supporting Evidence for this module evaluation.' : 'Process observation requirement.' }],
       status,
       judgeVersion: 'process-judge-2.1'
     }
@@ -586,19 +613,26 @@ if (task001Memory) {
 }
 if (task001Context) {
   task001Context.input = 'query_requirement: 面向管理层; memory_value: 面向普通员工'
-  task001Context.output = 'Context assembled with audience=普通员工'
-  task001Context.status = 'FAIL'
-  task001Context.judgeStatus = 'DERIVED_FAIL'
-  task001Context.evalResult = 'DERIVED_FAIL'
-  task001Context.derived = true
-  task001Context.derivedFrom = 'Memory'
-  task001Context.derivedFromObservationId = task001Memory?.id
+  task001Context.output = 'Full Context assembled with audience=普通员工; downstream judges use this as Evidence.'
+  task001Context.status = 'N/A'
+  task001Context.judgeStatus = 'N/A'
+  task001Context.evalResult = 'N/A'
+  task001Context.derived = false
+  task001Context.derivedFrom = undefined
+  task001Context.derivedFromObservationId = undefined
   task001Context.isRootCause = false
-  task001Context.reason = 'The incorrect Memory value was carried into Context without introducing a new local error.'
-  task001Context.metadata = { ...task001Context.metadata, query_requirement: '面向管理层', memory_value: '面向普通员工', derived_from: 'Memory' }
-  task001Context.rubricEvidence = [{ id: 'rubric-task-001-context', evidenceId: task001Context.evidenceIds[0], observationId: task001Context.id, kind: 'Input', summary: 'Context faithfully propagated the already incorrect Memory input.', quote: 'memory_value=面向普通员工', source: 'Context attribution rubric' }]
-  task001Context.judgeResult = { status: 'DERIVED_FAIL', score: 0.35, reason: task001Context.reason, rubricEvidence: task001Context.rubricEvidence, isRootCause: false, derivedFrom: 'Memory', derivedFromObservationId: task001Memory?.id }
-  task001Context.score = 0.35
+  task001Context.reason = 'Context is assembled in full and is not evaluated independently; this snapshot is used as downstream Evidence.'
+  task001Context.metadata = { ...task001Context.metadata, query_requirement: '面向管理层', memory_value: '面向普通员工' }
+  task001Context.rubricEvidence = [{ id: 'rubric-task-001-context', evidenceId: task001Context.evidenceIds[0], observationId: task001Context.id, kind: 'Input', summary: 'Full Context assembly is available as downstream Evidence.', quote: 'memory_value=面向普通员工', source: 'Context evidence contract', requirement: 'Context is full assembly evidence, not a standalone KPI.' }]
+  task001Context.judgeResult = { status: 'N/A', score: 0, reason: task001Context.reason, rubricEvidence: task001Context.rubricEvidence, isRootCause: false }
+  task001Context.score = 0
+}
+const task001IntentEval = tasks.find((item) => item.id === 'task-001')?.evals.find((item) => item.dimension === 'Intent Consistency')
+if (task001IntentEval) {
+  const intentEvidenceId = task001IntentEval.evidenceIds[0]
+  task001IntentEval.autoReason = '最终PPT面向普通员工，与用户当前要求的“面向管理层”不一致。'
+  task001IntentEval.reason = '最终PPT面向普通员工，与用户当前要求的“面向管理层”不一致。Context evidence was reviewed as full assembly input, not as a standalone KPI.'
+  task001IntentEval.rubricEvidence = [{ id: 'rubric-task-001-intent', evidenceId: intentEvidenceId, observationId: task001Context?.id, kind: 'Rule', summary: 'The final artifact audience must match the latest explicit user requirement.', quote: 'query_requirement=面向管理层; final_output_audience=普通员工', source: 'Office Eval Agent', requirement: 'Intent Consistency: the delivered audience must match the current explicit request.' }]
 }
 if (task001Outcome) {
   task001Outcome.metadata = { ...task001Outcome.metadata, final_output_audience: '普通员工' }
@@ -610,7 +644,7 @@ if (task001Attribution) {
   task001Attribution.firstFailureNode = 'Memory'
   task001Attribution.firstFailureObservationId = task001Memory?.id
   task001Attribution.rootCause = 'Memory'
-  task001Attribution.derivedFailureObservationIds = [task001Context?.id, task001Outcome?.id].filter((item): item is string => Boolean(item))
+  task001Attribution.derivedFailureObservationIds = [task001Outcome?.id].filter((item): item is string => Boolean(item))
   task001Attribution.derivedFrom = 'Memory'
   task001Attribution.derivedFromObservationId = task001Memory?.id
   task001Attribution.evidenceIds = task001Memory?.evidenceIds ?? []
@@ -657,9 +691,9 @@ const makeDatasetEntry = (datasetId: string, task: Task, version: string, type: 
   outcomeType: task.outcomeType,
   complexity: task.complexity,
   capabilityTags: [task.businessType, task.skill, task.rootCause === 'None' ? 'happy-path' : 'failure-analysis'],
-  expectedResult: task.status === 'Failed' ? 'Agent should surface the failure and request a correction.' : 'Agent should deliver a reviewable result with evidence.',
-  constraints: task.businessType === 'PPT' ? 'Keep the audience and slide count aligned with the request.' : 'Respect the source data and explicit user constraints.',
-  expectedProcess: task.rootCause === 'None' ? 'Understand → Plan → Assemble context → Execute → Verify' : 'Detect first failure → Explain evidence → Recover or ask for review',
+  expectedResult: task.status === 'Failed' ? 'Agent 应明确暴露失败并请求用户修正。' : 'Agent 应交付可复核且带有 Evidence 的结果。',
+  constraints: task.businessType === 'PPT' ? '受众和页数必须符合用户请求。' : '遵循源数据和用户明确约束。',
+  expectedProcess: task.rootCause === 'None' ? '任务理解 → 规划 → 组装 Context → 执行 → 验证' : '定位首错 → 解释 Evidence → 恢复或请求复核',
   goldenLabel: task.status === 'Failed' ? 'FAIL' : 'PASS',
   rootCause: task.rootCause,
   sourceTraceId: task.traceId,
@@ -670,11 +704,12 @@ const makeDatasetEntry = (datasetId: string, task: Task, version: string, type: 
 
 const primaryDatasetId = 'dataset-golden-v3'
 const historicalDatasetId = 'dataset-historical-v2'
+const challengeDatasetId = 'dataset-challenge-v1'
 const datasets: Dataset[] = [
   {
     id: primaryDatasetId,
     name: 'Core Golden Cases',
-    description: 'Stable outcome and process cases used for release comparisons.',
+    description: '用于版本发布对比的稳定结果与过程案例。',
     version: 'v3.2',
     type: 'Golden Case',
     entries: tasks.slice(0, 10).map((task, index) => makeDatasetEntry(primaryDatasetId, task, 'v3.2', 'Golden Case', index)),
@@ -683,11 +718,20 @@ const datasets: Dataset[] = [
   {
     id: historicalDatasetId,
     name: 'Historical Badcase Replay',
-    description: 'Confirmed failures retained for regression and root-cause review.',
+    description: '保留已确认失败案例，用于回归和 Root Cause 复盘。',
     version: 'v2.8',
     type: 'Historical Badcase',
     entries: tasks.filter((task) => task.status === 'Failed').slice(0, 8).map((task, index) => makeDatasetEntry(historicalDatasetId, task, 'v2.8', 'Historical Badcase', index)),
     updatedAt: '2026-08-22T09:30:00.000Z'
+  },
+  {
+    id: challengeDatasetId,
+    name: 'Challenge Boundary Cases',
+    description: '覆盖复杂度、缺失遥测、首错归因和异常恢复的挑战样例。',
+    version: 'v1.0',
+    type: 'Challenge Case',
+    entries: tasks.filter((task) => task.complexity === 'Complex' || task.rootCause === 'Task Understanding').slice(0, 10).map((task, index) => makeDatasetEntry(challengeDatasetId, task, 'v1.0', 'Challenge Case', index)),
+    updatedAt: NOW
   }
 ]
 

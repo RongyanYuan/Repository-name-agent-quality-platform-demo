@@ -52,14 +52,14 @@ export function PagePlaceholder({ title, eyebrow, description, accent = 'blue' }
           <span className="placeholder-card-note">筛选结果会在所有页面间保持</span>
         </div>
         <div className="placeholder-card">
-          <span className="placeholder-card-label">Scoped Tasks</span>
+          <span className="placeholder-card-label">当前范围 Task</span>
           <strong>{scopedTasks.length}</strong>
           <span className="placeholder-card-note">符合当前全局筛选的任务</span>
         </div>
         <div className="placeholder-card">
           <span className="placeholder-card-label">需要关注</span>
           <strong className="text-fail">{failedTasks.length}</strong>
-          <span className="placeholder-card-note">Failed Task / Trace</span>
+          <span className="placeholder-card-note">失败 Task / Trace</span>
         </div>
       </div>
       <div className="placeholder-empty-state">

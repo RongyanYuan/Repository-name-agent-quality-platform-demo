@@ -4,11 +4,40 @@ import { defaultFilters, filterTasks, getFirstFailure, getOverviewKpis, getRootC
 
 describe('quality fixtures', () => {
   it('cover the required task matrix', () => {
-    expect(qualityData.tasks.length).toBeGreaterThanOrEqual(24)
+    expect(qualityData.tasks.length).toBeGreaterThanOrEqual(60)
     expect(new Set(qualityData.tasks.map((task) => task.businessType))).toEqual(new Set(['PPT', 'Excel', 'Word', 'Coding', 'General']))
     expect(new Set(qualityData.tasks.map((task) => task.complexity))).toEqual(new Set(['Simple', 'Medium', 'Complex']))
     expect(new Set(qualityData.tasks.map((task) => task.status))).toEqual(new Set(['Effective', 'Effective but Inefficient', 'Failed']))
     expect(new Set(qualityData.tasks.map((task) => task.agentVersion))).toEqual(new Set(['agent-2.4.0', 'agent-2.5.0']))
+  })
+
+  it('covers boundary fixtures across governance, telemetry and datasets', () => {
+    expect(qualityData.cases.length).toBeGreaterThanOrEqual(30)
+    expect(new Set(qualityData.tasks.map((task) => task.rootCause))).toEqual(new Set([
+      'None',
+      'Task Understanding',
+      'Planning / Decision',
+      'Context',
+      'Memory',
+      'Skill Routing',
+      'Tool',
+      'Loop / Retry',
+      'Skill Internal',
+      'External Engineering'
+    ]))
+    expect(new Set(qualityData.datasets.map((dataset) => dataset.type))).toEqual(new Set(['Golden Case', 'Historical Badcase', 'Challenge Case']))
+
+    const observationStatuses = new Set(qualityData.observations.map((observation) => observation.judgeStatus ?? observation.status))
+    expect(observationStatuses).toEqual(new Set(['PASS', 'FAIL', 'DERIVED_FAIL', 'UNKNOWN', 'N/A']))
+
+    expect(qualityData.tasks.some((task) => task.performance?.ttftMs === undefined)).toBe(true)
+    expect(qualityData.tasks.some((task) => task.performance?.expectedLatencyMs === undefined)).toBe(true)
+    expect(qualityData.tasks.some((task) => task.performance?.costDeviation === undefined)).toBe(true)
+    expect(qualityData.tasks.some((task) => task.toolCalls === 0)).toBe(true)
+    expect(qualityData.tasks.some((task) => task.toolCalls > 0 && task.retryCount > 0 && task.processEfficiency?.recoverySuccess === 'PASS')).toBe(true)
+    expect(qualityData.tasks.some((task) => task.toolCalls > 0 && task.retryCount === 0 && task.performance?.oneShotToolSuccess === true)).toBe(true)
+    expect(qualityData.riskCommercialEvents?.some((event) => event.type === 'risk_interception')).toBe(true)
+    expect(qualityData.riskCommercialEvents?.some((event) => event.type === 'commercial_interception')).toBe(true)
   })
 
   it('keeps every task, trace, observation and evidence reference valid', () => {
@@ -32,8 +61,8 @@ describe('quality fixtures', () => {
     expect(firstFailure?.nodeType).toBe('Memory')
     expect(firstFailure?.rootCause).toBe('Memory')
     const context = qualityData.traces.find((trace) => trace.id === task?.traceId)?.observations.find((observation) => observation.nodeType === 'Context Assembly')
-    expect(context?.derived).toBe(true)
-    expect(context?.status).toBe('FAIL')
+    expect(context?.derived).toBe(false)
+    expect(context?.status).toBe('N/A')
   })
 })
 

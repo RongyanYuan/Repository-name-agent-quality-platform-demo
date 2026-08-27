@@ -59,6 +59,10 @@
 - 折叠按钮、异常卡、原因分布和下钻按钮在窄屏可访问，中文标题和状态标签不被截断。
 - 增加模块诊断计数语义、折叠状态、异常监控指标和全链路下钻测试。
 
+## 5. Session 对话与 Trace 关联
+
+Task 详情中的 Session ID 可点击打开 Session conversation Drawer。Drawer 按时间顺序展示该 Session 的 User query 与 Agent response；每个 query 必须带对应 Trace 入口，点击后回到相应 Task / Trace 详情并保留原有全局筛选。Trace 节点主体不再显示重复的 Evidence 数量文案，Evidence 统一在 Judge 结果和 Observation Details 中查看。
+
 ## 非目标
 
 本次不接入真实后端、Langfuse、数据库或线上成本基线；没有基线的数据继续使用 `UNKNOWN / 基线未建立`，不虚构通过或失败。

@@ -204,7 +204,7 @@ export interface DataTableProps<T> extends HTMLAttributes<HTMLDivElement> {
   onSortChange?: (key: string, direction: 'asc' | 'desc') => void
 }
 
-export function DataTable<T>({ columns, rows, rowKey = (_, index) => String(index), onRowClick, selectedRowId, empty = <EmptyState title="No records" description="Try adjusting the active filters." />, loading = false, caption, dense = false, stickyHeader = false, sort, onSortChange, className, ...props }: DataTableProps<T>) {
+export function DataTable<T>({ columns, rows, rowKey = (_, index) => String(index), onRowClick, selectedRowId, empty = <EmptyState title="暂无记录" description="请调整当前筛选条件。" />, loading = false, caption, dense = false, stickyHeader = false, sort, onSortChange, className, ...props }: DataTableProps<T>) {
   const handleSort = (column: Column<T>) => {
     if (!column.sortable || !onSortChange) return
     const direction = sort?.key === column.key && sort.direction === 'asc' ? 'desc' : 'asc'
@@ -368,7 +368,10 @@ export function EmptyState({ title, description, action, icon: Icon = Filter, cl
 export interface SectionHeaderProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title'> { eyebrow?: ReactNode; title: ReactNode; description?: ReactNode; actions?: ReactNode; meta?: ReactNode; level?: 2 | 3 }
 export function SectionHeader({ eyebrow, title, description, actions, meta, level = 2, className, ...props }: SectionHeaderProps) {
   const Heading = level === 3 ? 'h3' : 'h2'
-  return <div {...props} className={cn('flex flex-wrap items-start justify-between gap-3', className)}><div className="min-w-0">{eyebrow && <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent">{eyebrow}</p>}<Heading className={cn('text-ink', level === 2 ? 'text-base font-semibold' : 'text-sm font-semibold')}>{title}</Heading>{description && <p className="mt-1 max-w-3xl text-xs leading-5 text-muted">{description}</p>}{meta && <div className="mt-2 text-[11px] text-slate-400">{meta}</div>}</div>{actions && <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 sm:shrink-0">{actions}</div>}</div>
+  const labels: Record<string, string> = { 'EVALUATION CONFIG': '评测配置', 'RESULT EVAL': '结果 Eval', 'PROCESS EVAL': '过程 Eval', 'PERFORMANCE METRIC': '性能指标', 'RUBRIC VERSION': 'Rubric 版本', 'TOOL PERFORMANCE': 'Tool 性能', 'MODEL PERFORMANCE': 'Model 性能', 'TASK PERFORMANCE': 'Task 性能', 'EXECUTION VOLUME': '调用量', 'V2 RAW SIGNALS': '新版原始信号', 'RESPONSE & STREAMING': '响应与流式', 'TOKEN / CACHE / COST': 'Token / 缓存 / 成本', 'CALLS & ONE-SHOT': '调用与一次执行', 'RISK & COMMERCIAL': '商业化与风控' }
+  const localizedEyebrow = typeof eyebrow === 'string' ? labels[eyebrow] ?? eyebrow : eyebrow
+  const localizedTitle = typeof title === 'string' ? ({ 'Model calls': 'Model 调用', 'Tool baseline deviation': 'Tool 基线偏离', 'Case definition': 'Case 定义', 'Expected behavior': '预期行为', 'Benchmark history': 'Benchmark 历史', 'Version result': '版本结果', 'Case classification': 'Case 分类', 'View Exceptions': '查看异常' }[title] ?? title) : title
+  return <div {...props} className={cn('flex flex-wrap items-start justify-between gap-3', className)}><div className="min-w-0">{localizedEyebrow && <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent">{localizedEyebrow}</p>}<Heading className={cn('text-ink', level === 2 ? 'text-base font-semibold' : 'text-sm font-semibold')}>{localizedTitle}</Heading>{description && <p className="mt-1 max-w-3xl text-xs leading-5 text-muted">{description}</p>}{meta && <div className="mt-2 text-[11px] text-slate-400">{meta}</div>}</div>{actions && <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 sm:shrink-0">{actions}</div>}</div>
 }
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> { variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; size?: 'sm' | 'md'; icon?: LucideIcon; loading?: boolean }

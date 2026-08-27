@@ -142,40 +142,69 @@ function GlobalFilterBar() {
     if (location.pathname !== '/tasks') navigate('/tasks')
   }
 
+  const drilldownFilters = [
+    filters.rootCause ? `首错归因：${filters.rootCause}` : undefined,
+    filters.metric ? `指标：${filters.metric}` : undefined,
+    filters.status ? `状态：${filters.status}` : undefined,
+    filters.outcomeType ? `产物类型：${filters.outcomeType}` : undefined,
+    filters.complexity ? `复杂度：${filters.complexity}` : undefined,
+    filters.skill ? `Skill：${filters.skill}` : undefined,
+    filters.badcase ? `Badcase：${filters.badcase === 'yes' ? '是' : '否'}` : undefined,
+    filters.golden ? `Golden：${filters.golden === 'yes' ? '是' : '否'}` : undefined,
+    filters.anomalyTool ? `异常 Tool：${filters.anomalyTool}` : undefined,
+    filters.anomalyWindow ? `异常窗口：${filters.anomalyWindow}` : undefined
+  ].filter((value): value is string => Boolean(value))
+
+  const clearDrilldownFilters = () => {
+    const params = new URLSearchParams(location.search)
+    const keys = ['status', 'outcomeType', 'complexity', 'rootCause', 'skill', 'badcase', 'golden', 'metric', 'anomalyTool', 'anomalyWindow', 'acceptanceSignal', 'validity', 'processStatus', 'benchmarkId'] as const
+    keys.forEach((key) => params.delete(key))
+    dispatch({ type: 'SET_FILTERS', filters: Object.fromEntries(keys.map((key) => [key, undefined])) })
+    const search = params.toString()
+    navigate({ pathname: location.pathname, search: search ? `?${search}` : '' })
+  }
+
   return (
-    <div className="global-filter-bar" aria-label="全局筛选">
-      <div className="filter-group filter-group--range">
-        <label htmlFor="global-time-range">时间范围</label>
-        <select id="global-time-range" value={filters.timeRange} onChange={(event) => setFilter('timeRange', event.target.value as FilterState['timeRange'])}>
-          {TIME_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
-        </select>
+    <>
+      <div className="global-filter-bar" aria-label="全局筛选">
+        <div className="filter-group filter-group--range">
+          <label htmlFor="global-time-range">时间范围</label>
+          <select id="global-time-range" value={filters.timeRange} onChange={(event) => setFilter('timeRange', event.target.value as FilterState['timeRange'])}>
+            {TIME_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
+          </select>
+        </div>
+        <div className="filter-group">
+          <label htmlFor="global-agent-version">Agent 版本</label>
+          <select id="global-agent-version" value={filters.agentVersion} onChange={(event) => setFilter('agentVersion', event.target.value)}>
+            <option value="All Versions">全部版本</option>
+            {VERSION_OPTIONS.map((version) => <option value={version} key={version}>{version}</option>)}
+          </select>
+        </div>
+        <div className="filter-group">
+          <label htmlFor="global-business-type">业务类型</label>
+          <select id="global-business-type" value={filters.businessType} onChange={(event) => setFilter('businessType', event.target.value as FilterState['businessType'])}>
+            {BUSINESS_TYPES.map((business) => <option value={business} key={business}>{business === 'All' ? '全部业务' : business}</option>)}
+          </select>
+        </div>
+        <div className="filter-group">
+          <label htmlFor="global-environment">环境</label>
+          <select id="global-environment" value={filters.environment} onChange={(event) => setFilter('environment', event.target.value as FilterState['environment'])}>
+            {ENVIRONMENTS.map((environment) => <option value={environment} key={environment}>{environment}</option>)}
+          </select>
+        </div>
+        <form className="global-search" onSubmit={submitSearch} role="search">
+          <Search size={16} aria-hidden="true" />
+          <label className="sr-only" htmlFor="global-search-input">搜索 task_id、query 或 trace_id</label>
+          <input id="global-search-input" value={filters.search} onChange={onSearchChange} placeholder="搜索 task_id / query / trace_id" />
+          {filters.search && <button type="button" className="icon-button icon-button--quiet" aria-label="清除搜索" onClick={() => setFilter('search', '')}>×</button>}
+        </form>
       </div>
-      <div className="filter-group">
-        <label htmlFor="global-agent-version">Agent Version</label>
-        <select id="global-agent-version" value={filters.agentVersion} onChange={(event) => setFilter('agentVersion', event.target.value)}>
-          <option value="All Versions">全部版本</option>
-          {VERSION_OPTIONS.map((version) => <option value={version} key={version}>{version}</option>)}
-        </select>
-      </div>
-      <div className="filter-group">
-        <label htmlFor="global-business-type">业务类型</label>
-        <select id="global-business-type" value={filters.businessType} onChange={(event) => setFilter('businessType', event.target.value as FilterState['businessType'])}>
-          {BUSINESS_TYPES.map((business) => <option value={business} key={business}>{business === 'All' ? '全部业务' : business}</option>)}
-        </select>
-      </div>
-      <div className="filter-group">
-        <label htmlFor="global-environment">环境</label>
-        <select id="global-environment" value={filters.environment} onChange={(event) => setFilter('environment', event.target.value as FilterState['environment'])}>
-          {ENVIRONMENTS.map((environment) => <option value={environment} key={environment}>{environment}</option>)}
-        </select>
-      </div>
-      <form className="global-search" onSubmit={submitSearch} role="search">
-        <Search size={16} aria-hidden="true" />
-        <label className="sr-only" htmlFor="global-search-input">搜索 task_id、query 或 trace_id</label>
-        <input id="global-search-input" value={filters.search} onChange={onSearchChange} placeholder="搜索 task_id / query / trace_id" />
-        {filters.search && <button type="button" className="icon-button icon-button--quiet" aria-label="清除搜索" onClick={() => setFilter('search', '')}>×</button>}
-      </form>
-    </div>
+      {drilldownFilters.length > 0 && <div className="flex flex-wrap items-center gap-2 border-b border-line bg-slate-50 px-5 py-2 text-[11px] text-muted" role="status" aria-label="当前下钻筛选">
+        <span className="font-medium text-ink">当前下钻筛选</span>
+        {drilldownFilters.map((filter) => <span key={filter} className="rounded border border-accent/20 bg-white px-2 py-1 text-accent">{filter}</span>)}
+        <button type="button" className="ml-auto text-[11px] font-medium text-accent hover:text-ink" onClick={clearDrilldownFilters}>清除下钻筛选</button>
+      </div>}
+    </>
   )
 }
 
@@ -221,10 +250,10 @@ function Sidebar() {
       </div>
       <div className="sidebar-scope">
         <span className="status-dot status-dot--live" aria-hidden="true" />
-        <span>Demo Workspace</span>
+        <span>Demo 工作区</span>
       </div>
       <nav className="primary-nav" aria-label="主导航">
-        <div className="nav-caption">WORKSPACE</div>
+        <div className="nav-caption">工作区</div>
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon
           return (
@@ -246,7 +275,7 @@ function Sidebar() {
           <CircleHelp size={17} aria-hidden="true" />
           <span>使用说明</span>
         </button>
-        <div className="sidebar-version"><span>Workspace</span><strong>v0.1 Demo</strong></div>
+        <div className="sidebar-version"><span>工作区</span><strong>v0.1 Demo</strong></div>
       </div>
       {current && <span className="sr-only">当前页面：{current.label}</span>}
     </aside>

@@ -155,7 +155,7 @@ export const getAcceptanceSignals = (data: QualityData, task: Task): AcceptanceS
     finalAccept: finalAccepted && !negativeFeedback,
     repeatCorrection,
     negativeFeedback,
-    accepted: Boolean(task.productValidity?.qualified && finalAccepted && !negativeFeedback),
+    accepted: Boolean(task.productValidity?.qualified === true && task.processEfficiency?.targetMet === true && finalAccepted && !negativeFeedback),
     sourceEventIds: events.filter((event) => ['download', 'copy', 'like', 'accept', 'dislike', 'correction', 'new_requirement'].includes(event.type)).map((event) => event.id)
   }
 }
@@ -178,6 +178,7 @@ export interface UserSatisfactionMetrics {
   value: number
   rate: number
   acceptedQualifiedProducts: number
+  acceptedValidProducts: number
   allProducts: number
   denominator: number
   numerator: number
@@ -190,11 +191,14 @@ export interface UserSatisfactionMetrics {
   sourceTaskIds: string[]
 }
 
-/** North-star metric: accepted qualified products divided by all products. */
+/** A valid product must pass product qualification and the process expectation. */
+export const isValidProduct = (task: Task) => task.productValidity?.qualified === true && task.processEfficiency?.targetMet === true
+
+/** North-star metric: accepted valid products divided by all products. */
 export const getUserSatisfactionMetrics = (data: QualityData, filters: FilterState): UserSatisfactionMetrics => {
   const tasks = filterTasks(data, filters)
   const rows = tasks.map((task) => ({ task, signals: getAcceptanceSignals(data, task) }))
-  const acceptedQualifiedProducts = rows.filter(({ task, signals }) => Boolean((task.productValidity?.qualified ?? task.status !== 'Failed') && signals.accepted)).length
+  const acceptedValidProducts = rows.filter(({ task, signals }) => Boolean(isValidProduct(task) && signals.accepted)).length
   const firstAcceptRows = rows.filter(({ signals }) => signals.firstAccept)
   const finalAcceptRows = rows.filter(({ signals }) => signals.finalAccept)
   const repeatRows = rows.filter(({ signals }) => signals.repeatCorrection)
@@ -210,12 +214,13 @@ export const getUserSatisfactionMetrics = (data: QualityData, filters: FilterSta
   return {
     id: 'user-satisfaction',
     label: '用户满意度',
-    value: roundRate(acceptedQualifiedProducts, tasks.length),
-    rate: roundRate(acceptedQualifiedProducts, tasks.length),
-    acceptedQualifiedProducts,
+    value: roundRate(acceptedValidProducts, tasks.length),
+    rate: roundRate(acceptedValidProducts, tasks.length),
+    acceptedQualifiedProducts: acceptedValidProducts,
+    acceptedValidProducts,
     allProducts: tasks.length,
     denominator: tasks.length,
-    numerator: acceptedQualifiedProducts,
+    numerator: acceptedValidProducts,
     firstAccept: firstAcceptRows.length,
     finalAccept: finalAcceptRows.length,
     repeatCorrection: repeatRows.length,
@@ -226,7 +231,7 @@ export const getUserSatisfactionMetrics = (data: QualityData, filters: FilterSta
       makeSignal('repeat_correction', '持续重复纠错', repeatRows),
       makeSignal('negative_feedback', '明确负反馈', negativeRows)
     ],
-    trend: trendFor(roundRate(acceptedQualifiedProducts, tasks.length), 1),
+    trend: trendFor(roundRate(acceptedValidProducts, tasks.length), 1),
     sourceTaskIds: tasks.map((task) => task.id)
   }
 }
@@ -579,7 +584,6 @@ const processMetricMap: Record<string, string> = {
   'Execution Path': 'Execution Path',
   'Skill Selection': 'Skill Selection',
   'Tool Selection': 'Tool Selection',
-  'Context Assembly': 'Context Assembly',
   'Memory Use': 'Memory Use',
   'Unnecessary Tool Call': 'Unnecessary Tool Call',
   'Unnecessary Model Call': 'Unnecessary Model Call',
@@ -640,7 +644,7 @@ export interface ModuleDiagnostic {
 /** Aggregate local five-state observations without treating final outcome as a proxy. */
 export const getModuleDiagnostics = (data: QualityData, filters: FilterState): ModuleDiagnostic[] => {
   const tasks = filterTasks(data, filters)
-  const nodes = ['Task Understanding', 'Planning / Decision', 'Context Assembly', 'Memory', 'Skill Routing', 'Skill', 'Tool', 'Loop / Retry', 'Recovery']
+  const nodes = ['Task Understanding', 'Planning / Decision', 'Memory', 'Skill Routing', 'Skill', 'Tool', 'Loop / Retry', 'Recovery']
   const denominator = tasks.length || 1
   return nodes.map((nodeType) => {
     const rows = tasks.flatMap((task) => {
@@ -893,7 +897,8 @@ export const buildBenchmark = (data: QualityData, input: { datasetId: string; ve
   const metrics: BenchmarkMetric[] = [
     ['completion', '有效任务完成率', 'Result Eval', sourceTasks.filter((task) => task.status !== 'Failed').length],
     ['intent', '意图一致率', 'Result Eval', sourceTasks.filter((task) => task.evals.find((evaluation) => evaluation.dimension === 'Intent Consistency' && evaluation.autoStatus === 'PASS')).length],
-    ['context', 'Context 有效率', 'Process Eval', sourceTasks.filter((task) => task.processEvals.find((evaluation) => evaluation.dimension === 'Context Assembly' && evaluation.autoStatus === 'PASS')).length],
+    ['qualified', '合格产物率', 'Result Eval', sourceTasks.filter((task) => task.productValidity?.qualified === true).length],
+    ['process', '过程效率达标率', 'Process Eval', sourceTasks.filter((task) => task.processEfficiency?.targetMet === true).length],
     ['memory', 'Memory 有效率', 'Process Eval', sourceTasks.filter((task) => task.processEvals.find((evaluation) => evaluation.dimension === 'Memory Use' && evaluation.autoStatus === 'PASS')).length]
   ].map(([id, label, family, count], index) => {
     const valueA = sourceTasks.length ? Math.round((Number(count) / sourceTasks.length) * 100) : 0

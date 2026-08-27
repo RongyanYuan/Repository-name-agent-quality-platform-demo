@@ -55,7 +55,6 @@ export const PROCESS_DIMENSIONS = [
   'Execution Path',
   'Skill Selection',
   'Tool Selection',
-  'Context Assembly',
   'Memory Use',
   'Unnecessary Tool Call',
   'Unnecessary Model Call',

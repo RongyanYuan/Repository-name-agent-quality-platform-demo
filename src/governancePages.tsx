@@ -70,10 +70,10 @@ import {
 } from './ui'
 
 const CASE_TABS: Array<{ id: CaseStatus | 'All Cases'; label: string }> = [
-  { id: 'All Cases', label: 'All Cases' },
-  { id: 'Candidate', label: 'Badcase Candidate' },
-  { id: 'Confirmed Badcase', label: 'Confirmed Badcase' },
-  { id: 'Resolved', label: 'Resolved' }
+  { id: 'All Cases', label: '全部 Cases' },
+  { id: 'Candidate', label: 'Badcase 候选' },
+  { id: 'Confirmed Badcase', label: '已确认 Badcase' },
+  { id: 'Resolved', label: '已解决' }
 ]
 
 const BUCKETS: BenchmarkBucket[] = ['Improved Cases', 'Regressed Cases', 'Unchanged Failed Cases', 'Newly Failed Cases']
@@ -94,7 +94,6 @@ const OBSERVATION_OPTIONS: ObservationNode[] = [
   'Task Understanding',
   'Planning / Decision',
   'Memory',
-  'Context Assembly',
   'Skill Routing',
   'Skill',
   'Tool',
@@ -121,10 +120,11 @@ const effectiveLabel = (record: CaseRecord): EvalStatus => record.humanStatus ??
 const sectionClass = 'rounded-lg border border-line bg-panel p-4 shadow-panel'
 
 function PageIntro({ eyebrow, title, description, actions }: { eyebrow: string; title: string; description: string; actions?: ReactNode }) {
+  const eyebrowLabels: Record<string, string> = { 'CASE GOVERNANCE': 'Case 治理', 'GOLDEN DATASET': 'Golden Dataset', 'BENCHMARK / REGRESSION': 'Benchmark / 回归' }
   return (
     <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
       <div>
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-accent">{eyebrow}</p>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-accent">{eyebrowLabels[eyebrow] ?? eyebrow}</p>
         <h2 className="mt-1 text-xl font-semibold tracking-tight text-ink">{title}</h2>
         <p className="mt-1 max-w-3xl text-xs leading-5 text-muted">{description}</p>
       </div>
@@ -138,11 +138,11 @@ function CaseCompare({ record }: { record: CaseRecord }) {
   return (
     <div className="grid gap-2 sm:grid-cols-2">
       <div className="rounded-md border border-slate-200 bg-slate-50/70 p-3">
-        <div className="text-[10px] font-semibold uppercase tracking-wide text-muted">Auto Eval</div>
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-muted">自动 Eval</div>
         <div className="mt-2 flex items-center gap-2"><StatusBadge status={record.autoStatus} /><span className="text-[11px] text-muted">{record.autoReason}</span></div>
       </div>
       <div className={cn('rounded-md border p-3', disagreement ? 'border-warn/40 bg-warn/5' : 'border-slate-200 bg-slate-50/70')}>
-        <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-semibold uppercase tracking-wide text-muted">Human Label</span>{disagreement && <StatusBadge status="Eval Disagreement" tone="warn" showIcon={false} />}</div>
+        <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-semibold uppercase tracking-wide text-muted">人工标签</span>{disagreement && <StatusBadge status="Eval 分歧" tone="warn" showIcon={false} />}</div>
         <div className="mt-2 flex items-center gap-2"><StatusBadge status={record.humanStatus ?? 'Not reviewed'} />{record.humanReason && <span className="text-[11px] text-muted">{record.humanReason}</span>}</div>
       </div>
     </div>
@@ -209,54 +209,54 @@ function CaseReviewDrawer({
       open
       onClose={onClose}
       width="lg"
-      title="Case review"
-      description={`${record.id} · ${record.source} · updated ${formatDate(record.updatedAt)}`}
+      title="Case 评审"
+      description={`${record.id} · ${record.source} · 更新于 ${formatDate(record.updatedAt)}`}
       footer={<div className="flex flex-wrap items-center justify-between gap-2"><div className="flex flex-wrap gap-2"><Button icon={Save} variant="primary" onClick={save}>保存标注</Button><Button icon={ShieldCheck} onClick={() => { if (!draft.firstFailureNode || !draft.rootCause) { setError('请先选择 First Failure Node 和 Root Cause，才能确认 Badcase。'); return } setError(''); onSave({ ...draft, status: 'Confirmed Badcase' }) }}>确认 Badcase</Button><Button icon={Check} onClick={() => { if (!draft.firstFailureNode || !draft.rootCause) { setError('请先选择 First Failure Node 和 Root Cause，才能标记已解决。'); return } setError(''); onSave({ ...draft, status: 'Resolved' }) }}>标记已解决</Button></div><Button icon={Database} onClick={() => onAddDataset(record)}>加入 Dataset</Button></div>}
     >
       <div className="space-y-5">
         <div className={sectionClass}>
-          <SectionHeader title="Case identity" description="原始任务、Trace 和当前治理状态保持可追溯。" />
+          <SectionHeader title="Case 信息" description="原始任务、Trace 和当前治理状态保持可追溯。" />
           <dl className="mt-3 grid gap-x-5 gap-y-2 text-xs sm:grid-cols-2">
             <div><dt className="text-[10px] uppercase tracking-wide text-muted">Query</dt><dd className="mt-1 text-ink">{record.query}</dd></div>
             <div><dt className="text-[10px] uppercase tracking-wide text-muted">Task / Trace</dt><dd className="mt-1 font-mono text-[11px] text-ink">{record.taskId} · {record.traceId}</dd></div>
-            <div><dt className="text-[10px] uppercase tracking-wide text-muted">Task status</dt><dd className="mt-1"><StatusBadge status={task?.status ?? 'Unknown'} /></dd></div>
-            <div><dt className="text-[10px] uppercase tracking-wide text-muted">Current state</dt><dd className="mt-1"><StatusBadge status={record.status} /></dd></div>
+            <div><dt className="text-[10px] uppercase tracking-wide text-muted">Task 状态</dt><dd className="mt-1"><StatusBadge status={task?.status ?? 'UNKNOWN'} /></dd></div>
+            <div><dt className="text-[10px] uppercase tracking-wide text-muted">当前状态</dt><dd className="mt-1"><StatusBadge status={record.status} /></dd></div>
           </dl>
-          <div className="mt-3 flex flex-wrap gap-2"><Button size="sm" icon={ExternalLink} onClick={jumpToTask}>打开 Task / Trace</Button><span className="self-center text-[11px] text-muted">source: {record.source}</span></div>
+          <div className="mt-3 flex flex-wrap gap-2"><Button size="sm" icon={ExternalLink} onClick={jumpToTask}>打开 Task / Trace</Button><span className="self-center text-[11px] text-muted">来源：{record.source}</span></div>
         </div>
         <div>
-          <SectionHeader title="Auto Eval vs Human Label" description="保留自动判断，并让人工结果成为可审计的 effective label。" />
+          <SectionHeader title="Auto Eval vs Human Label" description="保留自动判断，并让人工结果成为可审计的有效标签。" />
           <div className="mt-3"><CaseCompare record={{ ...record, humanStatus: draft.humanStatus }} /></div>
         </div>
         <div className={sectionClass}>
-          <SectionHeader title="Trace first-failure attribution" description="根因只取首个非派生失败节点；下游传播失败保留为证据，不重复计入。" />
+          <SectionHeader title="Trace 首错归因" description="根因只取首个非派生失败节点；下游传播失败保留为 Evidence，不重复计入。" />
           <div className="mt-3 grid gap-3 sm:grid-cols-2 text-xs">
-            <div><p className="text-[10px] uppercase tracking-wide text-muted">First failure node</p><p className="mt-1 font-medium text-ink">{record.firstFailureNode ?? attribution?.firstFailureNode ?? 'Unknown'}</p></div>
-            <div><p className="text-[10px] uppercase tracking-wide text-muted">Root cause module</p><p className="mt-1 font-medium text-fail">{record.rootCause}</p></div>
+            <div><p className="text-[10px] uppercase tracking-wide text-muted">首错节点</p><p className="mt-1 font-medium text-ink">{record.firstFailureNode ?? attribution?.firstFailureNode ?? 'UNKNOWN'}</p></div>
+            <div><p className="text-[10px] uppercase tracking-wide text-muted">Root Cause 模块</p><p className="mt-1 font-medium text-fail">{record.rootCause}</p></div>
             <div><p className="text-[10px] uppercase tracking-wide text-muted">is_root_cause</p><p className="mt-1 font-mono text-fail">{record.derivedFailure ? 'false' : 'true'}</p></div>
-            <div><p className="text-[10px] uppercase tracking-wide text-muted">Source observation / evidence</p><p className="mt-1 break-words font-mono text-[10px] text-accent">{record.firstFailureObservationId ?? attribution?.firstFailureObservationId ?? '—'} · {(record.rubricEvidence ?? []).map((item) => item.evidenceId ?? item.id).join(', ') || '—'}</p></div>
+            <div><p className="text-[10px] uppercase tracking-wide text-muted">来源 Observation / Evidence</p><p className="mt-1 break-words font-mono text-[10px] text-accent">{record.firstFailureObservationId ?? attribution?.firstFailureObservationId ?? '—'} · {(record.rubricEvidence ?? []).map((item) => item.evidenceId ?? item.id).join(', ') || '—'}</p></div>
           </div>
-          {attribution?.derivedFailureObservationIds.length ? <p className="mt-3 text-[11px] text-derived">Derived failures: {attribution.derivedFailureObservationIds.join(', ')}</p> : <p className="mt-3 text-[11px] text-muted">No derived failures recorded.</p>}
+          {attribution?.derivedFailureObservationIds.length ? <p className="mt-3 text-[11px] text-derived">派生失败：{attribution.derivedFailureObservationIds.join(', ')}</p> : <p className="mt-3 text-[11px] text-muted">暂无派生失败记录。</p>}
         </div>
         <div className={sectionClass}>
-          <SectionHeader title="User behavior evidence" description="接受、纠错、新需求和负反馈事件用于解释最终满意度，不覆盖自动评测。" />
-          <div className="mt-3 space-y-2">{acceptanceEvents.length ? acceptanceEvents.map((event) => <div key={event.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line bg-slate-50/60 p-2.5 text-[11px]"><span className="font-medium text-ink">{event.type}</span><span className="text-muted">{event.note ?? event.source ?? 'Mock event'} · {formatDate(event.timestamp)}</span></div>) : <p className="text-xs text-muted">No user behavior events recorded.</p>}</div>
+          <SectionHeader title="用户行为 Evidence" description="接受、纠错、新需求和负反馈事件用于解释最终满意度，不覆盖自动评测。" />
+          <div className="mt-3 space-y-2">{acceptanceEvents.length ? acceptanceEvents.map((event) => <div key={event.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line bg-slate-50/60 p-2.5 text-[11px]"><span className="font-medium text-ink">{event.type}</span><span className="text-muted">{event.note ?? event.source ?? 'Mock 事件'} · {formatDate(event.timestamp)}</span></div>) : <p className="text-xs text-muted">暂无用户行为事件。</p>}</div>
         </div>
         <div className={sectionClass}>
-          <SectionHeader title="Product validity" description="合格产物的五个硬门槛和用户最终标签并排展示。" />
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 text-xs"><div><p className="text-[10px] uppercase tracking-wide text-muted">File Validity</p><div className="mt-1"><StatusBadge status={taskValidity?.fileValidity ?? 'UNKNOWN'} /></div></div><div><p className="text-[10px] uppercase tracking-wide text-muted">Golden Label candidate</p><div className="mt-1"><StatusBadge status={taskValidity?.qualified ? 'PASS' : 'FAIL'} /></div></div></div>
+          <SectionHeader title="产物有效性" description="合格产物的五个硬门槛和用户最终标签并排展示。" />
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 text-xs"><div><p className="text-[10px] uppercase tracking-wide text-muted">文件有效性</p><div className="mt-1"><StatusBadge status={taskValidity?.fileValidity ?? 'UNKNOWN'} /></div></div><div><p className="text-[10px] uppercase tracking-wide text-muted">Golden Label 候选</p><div className="mt-1"><StatusBadge status={taskValidity?.qualified ? 'PASS' : 'FAIL'} /></div></div></div>
         </div>
         {error && <InlineNotice tone="fail" title="无法保存">{error}</InlineNotice>}
         <div className={sectionClass}>
-          <SectionHeader title="Review fields" description="修改归因、严重度、责任人和人工备注。" />
+          <SectionHeader title="评审字段" description="修改归因、严重度、责任人和人工备注。" />
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <Field label="Human result" required><SelectInput value={draft.humanStatus} onChange={(event) => set('humanStatus', event.target.value as EvalStatus)}><option value="PASS">PASS</option><option value="FAIL">FAIL</option></SelectInput></Field>
             <Field label="Governance state" required><SelectInput value={draft.status} onChange={(event) => set('status', event.target.value as CaseStatus)}>{CASE_TABS.slice(1).map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</SelectInput></Field>
-            <Field label="Failure dimension" required><TextInput value={draft.failureDimension} onChange={(event) => set('failureDimension', event.target.value)} /></Field>
+            <Field label="失败维度" required><TextInput value={draft.failureDimension} onChange={(event) => set('failureDimension', event.target.value)} /></Field>
             <Field label="First Failure Node" required><SelectInput value={draft.firstFailureNode} onChange={(event) => set('firstFailureNode', event.target.value as ObservationNode | '')}><option value="">请选择节点</option>{OBSERVATION_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}</SelectInput></Field>
             <Field label="Root Cause" required><SelectInput value={draft.rootCause} onChange={(event) => set('rootCause', event.target.value as RootCause | '')}><option value="">请选择根因</option>{ROOT_CAUSE_OPTIONS.filter((item) => item !== 'None').map((item) => <option key={item} value={item}>{item}</option>)}</SelectInput></Field>
             <Field label="Severity"><SelectInput value={draft.severity} onChange={(event) => set('severity', event.target.value as Severity)}>{SEVERITIES.map((item) => <option key={item} value={item}>{item}</option>)}</SelectInput></Field>
-            <Field label="Owner"><SelectInput value={draft.owner} onChange={(event) => set('owner', event.target.value as Owner)}>{OWNERS.map((item) => <option key={item} value={item}>{item}</option>)}</SelectInput></Field>
+            <Field label="负责人"><SelectInput value={draft.owner} onChange={(event) => set('owner', event.target.value as Owner)}>{OWNERS.map((item) => <option key={item} value={item}>{item}</option>)}</SelectInput></Field>
             <Field label="Derived failure"><Toggle checked={draft.derivedFailure} onChange={(checked) => set('derivedFailure', checked)} label={draft.derivedFailure ? 'Derived / 派生错误' : 'Root failure / 首个失败'} /></Field>
           </div>
           <Field className="mt-4" label="Human note"><TextArea value={draft.note} onChange={(event) => set('note', event.target.value)} placeholder="记录证据、修复方向或解决说明" /></Field>
@@ -349,9 +349,9 @@ export function CasesPage() {
       outcomeType: task.outcomeType,
       complexity: task.complexity,
       capabilityTags: [task.businessType, task.skill, record.rootCause],
-      expectedResult: task.status === 'Failed' ? 'Agent should surface the failure and request a correction.' : task.finalOutcome,
-      constraints: 'Respect the source data, audience and explicit user constraints.',
-      expectedProcess: 'Understand → plan → assemble context → execute → verify',
+      expectedResult: task.status === 'Failed' ? 'Agent 应明确暴露失败并请求用户修正。' : task.finalOutcome,
+      constraints: '遵循源数据、受众和用户明确约束。',
+      expectedProcess: '任务理解 → 规划 → 组装 Context → 执行 → 验证',
       goldenLabel: effectiveLabel(record),
       rootCause: record.rootCause,
       sourceTraceId: record.traceId,
@@ -364,17 +364,17 @@ export function CasesPage() {
   }
   return (
     <section className="space-y-5" aria-labelledby="cases-title">
-      <PageIntro eyebrow="CASE GOVERNANCE" title="Case & Badcase" description="把自动评测、用户反馈和系统错误转化为可复核、可归因、可复用的治理资产。" actions={<Button icon={Database} onClick={() => navigateContext('/datasets')}>打开 Golden Dataset</Button>} />
+      <PageIntro eyebrow="Case 治理" title="Case & Badcase" description="把自动评测、用户反馈和系统错误转化为可复核、可归因、可复用的治理资产。" actions={<Button icon={Database} onClick={() => navigateContext('/datasets')}>打开 Golden Dataset</Button>} />
       <Tabs aria-label="Case governance states" activeId={tab} onChange={(id) => setTab(id as CaseStatus | 'All Cases')} items={CASE_TABS.map((item) => ({ ...item, count: tabCount(item.id) }))} size="md" />
-      <FilterBar title="Case filters" searchValue={query} onSearchChange={setQuery} searchPlaceholder="搜索 query / task_id / trace_id" resultCount={filteredCases.length} onReset={reset} controls={[
-        { id: 'case-task-status', label: 'Task status', value: filters.taskStatus, options: optionItems(TASK_STATUS_OPTIONS), onChange: (value) => setFilter('taskStatus', value) },
-        { id: 'case-dimension', label: 'Failure dimension', value: filters.failureDimension, options: optionItems(Array.from(new Set(state.cases.map((record) => record.failureDimension)))), onChange: (value) => setFilter('failureDimension', value) },
-        { id: 'case-node', label: 'First failure', value: filters.firstFailureNode, options: optionItems(OBSERVATION_OPTIONS), onChange: (value) => setFilter('firstFailureNode', value) },
-        { id: 'case-root', label: 'Root cause', value: filters.rootCause, options: optionItems(ROOT_CAUSE_OPTIONS), onChange: (value) => setFilter('rootCause', value) },
-        { id: 'case-severity', label: 'Severity', value: filters.severity, options: optionItems(SEVERITIES), onChange: (value) => setFilter('severity', value) },
-        { id: 'case-owner', label: 'Owner', value: filters.owner, options: optionItems(OWNERS), onChange: (value) => setFilter('owner', value) },
-        { id: 'case-source', label: 'Case source', value: filters.source, options: optionItems(CASE_SOURCES), onChange: (value) => setFilter('source', value) },
-        { id: 'case-version', label: 'Agent version', value: filters.version, options: optionItems(VERSION_OPTIONS), onChange: (value) => setFilter('version', value) }
+      <FilterBar title="Case 筛选" searchValue={query} onSearchChange={setQuery} searchPlaceholder="搜索 query / task_id / trace_id" resultCount={filteredCases.length} onReset={reset} controls={[
+        { id: 'case-task-status', label: 'Task 状态', value: filters.taskStatus, options: TASK_STATUS_OPTIONS.map((value) => ({ value, label: value === 'Effective' ? '有效' : value === 'Effective but Inefficient' ? '有效但低效' : '失败' })), onChange: (value) => setFilter('taskStatus', value) },
+        { id: 'case-dimension', label: '失败维度', value: filters.failureDimension, options: optionItems(Array.from(new Set(state.cases.map((record) => record.failureDimension)))), onChange: (value) => setFilter('failureDimension', value) },
+        { id: 'case-node', label: '首错节点', value: filters.firstFailureNode, options: optionItems(OBSERVATION_OPTIONS), onChange: (value) => setFilter('firstFailureNode', value) },
+        { id: 'case-root', label: 'Root Cause', value: filters.rootCause, options: optionItems(ROOT_CAUSE_OPTIONS), onChange: (value) => setFilter('rootCause', value) },
+        { id: 'case-severity', label: '严重度', value: filters.severity, options: optionItems(SEVERITIES), onChange: (value) => setFilter('severity', value) },
+        { id: 'case-owner', label: '负责人', value: filters.owner, options: optionItems(OWNERS), onChange: (value) => setFilter('owner', value) },
+        { id: 'case-source', label: 'Case 来源', value: filters.source, options: optionItems(CASE_SOURCES), onChange: (value) => setFilter('source', value) },
+        { id: 'case-version', label: 'Agent 版本', value: filters.version, options: optionItems(VERSION_OPTIONS), onChange: (value) => setFilter('version', value) }
       ]} />
       <DataTable<CaseRecord>
         caption="Case governance records"
@@ -384,13 +384,13 @@ export function CasesPage() {
         selectedRowId={selectedId}
         columns={[
           { key: 'query', header: 'Case', accessor: (record) => <div className="min-w-[250px]"><p className="line-clamp-2 font-medium text-ink">{record.query}</p><p className="mt-1 font-mono text-[10px] text-muted">{record.id} · {record.taskId}</p></div> },
-          { key: 'status', header: 'State', accessor: (record) => <div className="space-y-1"><StatusBadge status={record.status} /><div className="text-[10px] text-muted">{effectiveLabel(record)} effective</div></div> },
-          { key: 'failure', header: 'Failure / root cause', accessor: (record) => <div><p className="text-xs text-ink">{record.failureDimension}</p><p className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-muted"><span>{record.firstFailureNode ?? 'Unassigned'}</span><span>·</span><span className="font-medium text-fail">{record.rootCause}</span>{record.derivedFailure && <StatusBadge status="Derived" tone="derived" showIcon={false} />}</p></div> },
-          { key: 'version', header: 'Agent version', accessor: (record) => <span className="font-mono text-[10px] text-muted">{state.tasks.find((task) => task.id === record.taskId)?.agentVersion ?? '—'}</span> },
-          { key: 'severity', header: 'Severity', accessor: (record) => <StatusBadge status={record.severity} tone={record.severity === 'P0' ? 'fail' : record.severity === 'P1' ? 'warn' : 'neutral'} showIcon={false} /> },
-          { key: 'owner', header: 'Owner', accessor: (record) => <span className="text-xs text-ink">{record.owner}</span> },
-          { key: 'source', header: 'Source', accessor: (record) => <span className="text-[11px] text-muted">{record.source}</span> },
-          { key: 'updated', header: 'Updated', accessor: (record) => <span className="whitespace-nowrap text-[11px] text-muted">{formatDate(record.updatedAt)}</span> }
+          { key: 'status', header: '状态', accessor: (record) => <div className="space-y-1"><StatusBadge status={record.status} /><div className="text-[10px] text-muted">{effectiveLabel(record)} 有效标签</div></div> },
+          { key: 'failure', header: '失败 / Root Cause', accessor: (record) => <div><p className="text-xs text-ink">{record.failureDimension}</p><p className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-muted"><span>{record.firstFailureNode ?? '未分配'}</span><span>·</span><span className="font-medium text-fail">{record.rootCause}</span>{record.derivedFailure && <StatusBadge status="派生" tone="derived" showIcon={false} />}</p></div> },
+          { key: 'version', header: 'Agent 版本', accessor: (record) => <span className="font-mono text-[10px] text-muted">{state.tasks.find((task) => task.id === record.taskId)?.agentVersion ?? '—'}</span> },
+          { key: 'severity', header: '严重度', accessor: (record) => <StatusBadge status={record.severity} tone={record.severity === 'P0' ? 'fail' : record.severity === 'P1' ? 'warn' : 'neutral'} showIcon={false} /> },
+          { key: 'owner', header: '负责人', accessor: (record) => <span className="text-xs text-ink">{record.owner}</span> },
+          { key: 'source', header: '来源', accessor: (record) => <span className="text-[11px] text-muted">{record.source}</span> },
+          { key: 'updated', header: '更新时间', accessor: (record) => <span className="whitespace-nowrap text-[11px] text-muted">{formatDate(record.updatedAt)}</span> }
         ]}
       />
       {selectedRecord && <CaseReviewDrawer record={selectedRecord} task={selectedTask} onClose={() => setSelectedId(undefined)} onSave={saveCase} onAddDataset={(record) => setAddDatasetId(record.id)} onOpenTask={(task) => { if (task) navigateContext('/tasks', { params: { taskId: task.id, traceId: task.traceId } }) }} />}
@@ -449,33 +449,33 @@ function DatasetEntryDrawer({
     onSave(effectiveEntry, draft)
   }
   return (
-    <Drawer open onClose={onClose} width="lg" title="Dataset entry" description={`${dataset.name} · ${effectiveEntry.id}`} footer={<div className="flex flex-wrap items-center justify-between gap-2"><Button icon={Save} variant="primary" onClick={save}>保存条目</Button><Toggle checked={effectiveEntry.enabled} onChange={(checked) => onToggle(effectiveEntry, checked)} label={effectiveEntry.enabled ? 'Enabled' : 'Disabled'} /></div>}>
+    <Drawer open onClose={onClose} width="lg" title="Dataset 条目" description={`${dataset.name} · ${effectiveEntry.id}`} footer={<div className="flex flex-wrap items-center justify-between gap-2"><Button icon={Save} variant="primary" onClick={save}>保存条目</Button><Toggle checked={effectiveEntry.enabled} onChange={(checked) => onToggle(effectiveEntry, checked)} label={effectiveEntry.enabled ? '已启用' : '已停用'} /></div>}>
       <div className="space-y-5">
         <div className={sectionClass}>
-          <SectionHeader title="Case definition" description="Golden Case 必须明确预期结果、约束和标签；禁用条目仍保留审计历史。" />
+          <SectionHeader title="Case 定义" description="Golden Case 必须明确预期结果、约束和标签；停用条目仍保留审计历史。" />
           <dl className="mt-3 grid gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2"><dt className="text-[10px] uppercase tracking-wide text-muted">Query</dt><dd className="mt-1 text-xs leading-5 text-ink">{effectiveEntry.query}</dd></div>
-            <div><dt className="text-[10px] uppercase tracking-wide text-muted">Outcome Type</dt><dd className="mt-1"><StatusBadge status={effectiveEntry.outcomeType} tone="info" showIcon={false} /></dd></div>
-            <div><dt className="text-[10px] uppercase tracking-wide text-muted">Complexity</dt><dd className="mt-1 text-xs text-ink">{effectiveEntry.complexity}</dd></div>
+            <div><dt className="text-[10px] uppercase tracking-wide text-muted">交付类型</dt><dd className="mt-1"><StatusBadge status={effectiveEntry.outcomeType} tone="info" showIcon={false} /></dd></div>
+            <div><dt className="text-[10px] uppercase tracking-wide text-muted">复杂度</dt><dd className="mt-1 text-xs text-ink">{effectiveEntry.complexity === 'Simple' ? '简单' : effectiveEntry.complexity === 'Medium' ? '中等' : '复杂'}</dd></div>
             <div><dt className="text-[10px] uppercase tracking-wide text-muted">Golden Label</dt><dd className="mt-1"><StatusBadge status={effectiveEntry.goldenLabel} /></dd></div>
-            <div><dt className="text-[10px] uppercase tracking-wide text-muted">File Validity</dt><dd className="mt-1"><StatusBadge status={effectiveEntry.fileValidity ?? task?.productValidity?.fileValidity ?? 'UNKNOWN'} /></dd></div>
-            <div><dt className="text-[10px] uppercase tracking-wide text-muted">Source Trace</dt><dd className="mt-1 font-mono text-[10px] text-accent">{effectiveEntry.sourceTraceId}</dd></div>
+            <div><dt className="text-[10px] uppercase tracking-wide text-muted">文件有效性</dt><dd className="mt-1"><StatusBadge status={effectiveEntry.fileValidity ?? task?.productValidity?.fileValidity ?? 'UNKNOWN'} /></dd></div>
+            <div><dt className="text-[10px] uppercase tracking-wide text-muted">来源 Trace</dt><dd className="mt-1 font-mono text-[10px] text-accent">{effectiveEntry.sourceTraceId}</dd></div>
           </dl>
         </div>
         {error && <InlineNotice tone="fail" title="无法保存">{error}</InlineNotice>}
         <div className={sectionClass}>
-          <SectionHeader title="Expected behavior" />
+          <SectionHeader title="预期行为" />
           <div className="mt-4 space-y-4">
-            <Field label="Expected Result" required><TextArea value={draft.expectedResult} onChange={(event) => set('expectedResult', event.target.value)} /></Field>
-            <Field label="Constraints" required><TextArea value={draft.constraints} onChange={(event) => set('constraints', event.target.value)} /></Field>
-            <Field label="Expected Process"><TextArea value={draft.expectedProcess} onChange={(event) => set('expectedProcess', event.target.value)} placeholder="可选：任务理解 → 规划 → 执行 → 验证" /></Field>
-            <Field label="Capability Tags" hint="用逗号分隔"><TextInput value={draft.capabilityTags} onChange={(event) => set('capabilityTags', event.target.value)} /></Field>
-            <Field label="Dataset Version" required><TextInput value={draft.version} onChange={(event) => set('version', event.target.value)} /></Field>
+            <Field label="预期结果" required><TextArea value={draft.expectedResult} onChange={(event) => set('expectedResult', event.target.value)} /></Field>
+            <Field label="约束条件" required><TextArea value={draft.constraints} onChange={(event) => set('constraints', event.target.value)} /></Field>
+            <Field label="预期过程"><TextArea value={draft.expectedProcess} onChange={(event) => set('expectedProcess', event.target.value)} placeholder="可选：任务理解 → 规划 → 执行 → 验证" /></Field>
+            <Field label="能力标签" hint="用逗号分隔"><TextInput value={draft.capabilityTags} onChange={(event) => set('capabilityTags', event.target.value)} /></Field>
+            <Field label="Dataset 版本" required><TextInput value={draft.version} onChange={(event) => set('version', event.target.value)} /></Field>
           </div>
         </div>
-        {task && <div className="rounded-md border border-line bg-slate-50/60 p-3"><p className="text-[10px] uppercase tracking-wide text-muted">Source Task</p><p className="mt-1 font-mono text-[10px] text-ink">{task.id} · {task.agentVersion} · {formatDuration(task.latency)}</p></div>}
+        {task && <div className="rounded-md border border-line bg-slate-50/60 p-3"><p className="text-[10px] uppercase tracking-wide text-muted">来源 Task</p><p className="mt-1 font-mono text-[10px] text-ink">{task.id} · {task.agentVersion} · {formatDuration(task.latency)}</p></div>}
         <div className={sectionClass}>
-          <SectionHeader title="Source & version history" actions={<History className="h-4 w-4 text-muted" aria-hidden="true" />} />
+          <SectionHeader title="来源与版本历史" actions={<History className="h-4 w-4 text-muted" aria-hidden="true" />} />
           <div className="mt-3 space-y-2">{effectiveEntry.history.map((item, index) => <div key={`${item.version}-${index}`} className="border-l-2 border-accent/30 pl-3"><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-[11px] text-accent">{item.version}</span><span className="text-[10px] text-muted">{formatDate(item.changedAt)}</span></div><p className="mt-1 text-xs text-ink">{item.summary}</p></div>)}</div>
         </div>
       </div>
@@ -493,7 +493,7 @@ function CreateDatasetModal({ onClose, onCreate }: { onClose: () => void; onCrea
     if (!name.trim() || !version.trim()) { setError('Dataset name 和 version 为必填项。'); return }
     onCreate({ name: name.trim(), description: description.trim(), version: version.trim(), type })
   }
-  return <Modal open onClose={onClose} title="新建 Dataset" description="创建后可从 Case 工作台加入条目，或添加显式 Golden Case。" size="sm" footer={<div className="flex justify-end gap-2"><Button onClick={onClose}>取消</Button><Button icon={Plus} variant="primary" onClick={submit}>创建 Dataset</Button></div>}><div className="space-y-4">{error && <InlineNotice tone="fail">{error}</InlineNotice>}<Field label="Dataset name" required><TextInput value={name} onChange={(event) => setName(event.target.value)} placeholder="例如 Release Golden Set" /></Field><Field label="Type" required><SelectInput value={type} onChange={(event) => setType(event.target.value as DatasetType)}>{DATASET_TYPES.map((item) => <option key={item} value={item}>{item}</option>)}</SelectInput></Field><Field label="Version" required><TextInput value={version} onChange={(event) => setVersion(event.target.value)} /></Field><Field label="Description"><TextArea value={description} onChange={(event) => setDescription(event.target.value)} /></Field></div></Modal>
+  return <Modal open onClose={onClose} title="新建 Dataset" description="创建后可从 Case 工作台加入条目，或添加显式 Golden Case。" size="sm" footer={<div className="flex justify-end gap-2"><Button onClick={onClose}>取消</Button><Button icon={Plus} variant="primary" onClick={submit}>创建 Dataset</Button></div>}><div className="space-y-4">{error && <InlineNotice tone="fail">{error}</InlineNotice>}<Field label="Dataset 名称" required><TextInput value={name} onChange={(event) => setName(event.target.value)} placeholder="例如 Release Golden Set" /></Field><Field label="类型" required><SelectInput value={type} onChange={(event) => setType(event.target.value as DatasetType)}>{DATASET_TYPES.map((item) => <option key={item} value={item}>{item}</option>)}</SelectInput></Field><Field label="版本" required><TextInput value={version} onChange={(event) => setVersion(event.target.value)} /></Field><Field label="描述"><TextArea value={description} onChange={(event) => setDescription(event.target.value)} /></Field></div></Modal>
 }
 
 function AddExplicitEntryModal({ dataset, tasks, onClose, onAdd }: { dataset?: Dataset; tasks: Task[]; onClose: () => void; onAdd: (entry: DatasetEntry) => void }) {
@@ -506,9 +506,9 @@ function AddExplicitEntryModal({ dataset, tasks, onClose, onAdd }: { dataset?: D
   const task = tasks.find((item) => item.id === taskId)
   const submit = () => {
     if (!dataset || !task || !expectedResult.trim() || !constraints.trim() || !goldenLabel) { setError('请填写 Task、Expected Result、Constraints 和 Golden Label。'); return }
-    onAdd({ id: `entry-${dataset.id}-${task.id}-${Date.now()}`, datasetId: dataset.id, taskId: task.id, query: task.query, type, outcomeType: task.outcomeType, complexity: task.complexity, capabilityTags: [task.businessType, task.skill], expectedResult: expectedResult.trim(), constraints: constraints.trim(), expectedProcess: 'Understand → plan → execute → verify', goldenLabel, rootCause: task.rootCause, sourceTraceId: task.traceId, version: dataset.version, enabled: true, history: [{ version: dataset.version, changedAt: new Date().toISOString(), summary: 'Created explicitly in Dataset' }] })
+    onAdd({ id: `entry-${dataset.id}-${task.id}-${Date.now()}`, datasetId: dataset.id, taskId: task.id, query: task.query, type, outcomeType: task.outcomeType, complexity: task.complexity, capabilityTags: [task.businessType, task.skill], expectedResult: expectedResult.trim(), constraints: constraints.trim(), expectedProcess: '任务理解 → 规划 → 执行 → 验证', goldenLabel, rootCause: task.rootCause, sourceTraceId: task.traceId, version: dataset.version, enabled: true, history: [{ version: dataset.version, changedAt: new Date().toISOString(), summary: '在 Dataset 中显式创建' }] })
   }
-  return <Modal open onClose={onClose} title="添加显式 Golden Case" description="启用前必须填写完整 Expected Outcome、Constraint 与 Golden Label。" size="md" footer={<div className="flex justify-end gap-2"><Button onClick={onClose}>取消</Button><Button icon={FilePlus2} variant="primary" onClick={submit}>添加 Case</Button></div>}><div className="space-y-4">{error && <InlineNotice tone="fail">{error}</InlineNotice>}<Field label="Source Task" required><SelectInput value={taskId} onChange={(event) => setTaskId(event.target.value)}>{tasks.map((item) => <option key={item.id} value={item.id}>{item.id} · {item.query.slice(0, 55)}</option>)}</SelectInput></Field><Field label="Dataset entry type"><SelectInput value={type} onChange={(event) => setType(event.target.value as DatasetType)}>{DATASET_TYPES.map((item) => <option key={item} value={item}>{item}</option>)}</SelectInput></Field><Field label="Golden Label" required><SelectInput value={goldenLabel} onChange={(event) => setGoldenLabel(event.target.value as EvalStatus)}><option value="PASS">PASS</option><option value="FAIL">FAIL</option></SelectInput></Field><Field label="Expected Result" required><TextArea value={expectedResult} onChange={(event) => setExpectedResult(event.target.value)} /></Field><Field label="Constraints" required><TextArea value={constraints} onChange={(event) => setConstraints(event.target.value)} /></Field></div></Modal>
+  return <Modal open onClose={onClose} title="添加显式 Golden Case" description="启用前必须填写完整预期结果、约束与 Golden Label。" size="md" footer={<div className="flex justify-end gap-2"><Button onClick={onClose}>取消</Button><Button icon={FilePlus2} variant="primary" onClick={submit}>添加 Case</Button></div>}><div className="space-y-4">{error && <InlineNotice tone="fail">{error}</InlineNotice>}<Field label="来源 Task" required><SelectInput value={taskId} onChange={(event) => setTaskId(event.target.value)}>{tasks.map((item) => <option key={item.id} value={item.id}>{item.id} · {item.query.slice(0, 55)}</option>)}</SelectInput></Field><Field label="Dataset 条目类型"><SelectInput value={type} onChange={(event) => setType(event.target.value as DatasetType)}>{DATASET_TYPES.map((item) => <option key={item} value={item}>{item}</option>)}</SelectInput></Field><Field label="Golden Label" required><SelectInput value={goldenLabel} onChange={(event) => setGoldenLabel(event.target.value as EvalStatus)}><option value="PASS">PASS</option><option value="FAIL">FAIL</option></SelectInput></Field><Field label="预期结果" required><TextArea value={expectedResult} onChange={(event) => setExpectedResult(event.target.value)} /></Field><Field label="约束条件" required><TextArea value={constraints} onChange={(event) => setConstraints(event.target.value)} /></Field></div></Modal>
 }
 
 export function DatasetsPage() {
@@ -574,21 +574,21 @@ export function DatasetsPage() {
   }
   return (
     <section className="space-y-5" aria-labelledby="datasets-title">
-      <PageIntro eyebrow="GOLDEN DATASET" title="Golden Dataset" description="维护 Golden、Historical Badcase 与 Challenge Case，明确 Expected Outcome、Constraint 和 Golden Label。" actions={<div className="flex flex-wrap gap-2"><Button icon={Plus} variant="primary" onClick={() => setCreateOpen(true)}>新建 Dataset</Button><Button icon={FilePlus2} disabled={!dataset} onClick={() => setAddEntryOpen(true)}>添加 Golden Case</Button></div>} />
+      <PageIntro eyebrow="Golden Dataset" title="Golden Dataset" description="维护 Golden、Historical Badcase 与 Challenge Case，明确预期结果、约束和 Golden Label。" actions={<div className="flex flex-wrap gap-2"><Button icon={Plus} variant="primary" onClick={() => setCreateOpen(true)}>新建 Dataset</Button><Button icon={FilePlus2} disabled={!dataset} onClick={() => setAddEntryOpen(true)}>添加 Golden Case</Button></div>} />
       {notice && <InlineNotice tone="info" title="Dataset 更新"><div className="flex items-center justify-between gap-3"><span>{notice}</span><button type="button" className="text-accent" onClick={() => setNotice('')} aria-label="关闭提示"><X className="h-3.5 w-3.5" /></button></div></InlineNotice>}
       {!state.datasets.length ? <EmptyState title="暂无 Dataset" description="创建第一个 Dataset，开始沉淀可复用案例。" action={<Button icon={Plus} onClick={() => setCreateOpen(true)}>新建 Dataset</Button>} /> : <>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{state.datasets.map((item) => <button key={item.id} type="button" onClick={() => { setSelectedDatasetId(item.id); setSelectedIds(new Set()) }} className={cn('rounded-lg border bg-panel p-4 text-left shadow-panel transition hover:border-accent/50', dataset?.id === item.id ? 'border-accent ring-2 ring-accent/10' : 'border-line')}><div className="flex items-start justify-between gap-2"><div><p className="text-sm font-semibold text-ink">{item.name}</p><p className="mt-1 text-[11px] text-muted">{item.type} · {item.version}</p></div><Database className="h-4 w-4 text-accent" aria-hidden="true" /></div><p className="mt-3 line-clamp-2 text-xs leading-5 text-muted">{item.description || 'No description'}</p><div className="mt-3 flex items-center justify-between text-[11px] text-muted"><span>{item.entries.length} entries</span><span className="text-pass">{item.entries.filter((entry) => entry.enabled).length} enabled</span></div></button>)}</div>
         {dataset && <div className={sectionClass}>
           <SectionHeader title={<span className="inline-flex items-center gap-2"><Database className="h-4 w-4 text-accent" />{dataset.name}</span>} description={dataset.description} meta={<span>{dataset.type} · version {dataset.version} · {enabledCount}/{entries.length} enabled</span>} actions={<div className="flex flex-wrap gap-2"><Button size="sm" disabled={!selectedIds.size} onClick={() => bulkToggle(true)}>批量启用</Button><Button size="sm" disabled={!selectedIds.size} onClick={() => bulkToggle(false)}>批量禁用</Button><Button size="sm" icon={GitCompareArrows} onClick={() => navigateContext('/benchmarks', { params: { datasetId: dataset.id } })}>发起 Benchmark</Button></div>} />
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-y border-line py-2 text-[11px] text-muted"><label className="inline-flex items-center gap-2"><input type="checkbox" checked={entries.length > 0 && selectedIds.size === entries.length} onChange={(event) => setSelectedIds(event.target.checked ? new Set(entries.map((entry) => entry.id)) : new Set())} />选择全部</label><span>禁用条目不会进入新 Benchmark，但可查看历史。</span></div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-y border-line py-2 text-[11px] text-muted"><label className="inline-flex items-center gap-2"><input type="checkbox" checked={entries.length > 0 && selectedIds.size === entries.length} onChange={(event) => setSelectedIds(event.target.checked ? new Set(entries.map((entry) => entry.id)) : new Set())} />选择全部</label><span>停用条目不会进入新 Benchmark，但可查看历史。</span></div>
           <DataTable<DatasetEntry> rows={entries} rowKey={(entry) => entry.id} onRowClick={(entry) => setSelectedEntryId(entry.id)} selectedRowId={selectedEntryId} dense columns={[
             { key: 'select', header: '', width: '42px', accessor: (entry) => <input type="checkbox" aria-label={`选择 ${entry.id}`} checked={selectedIds.has(entry.id)} onClick={(event) => event.stopPropagation()} onChange={(event) => setSelectedIds((current) => { const next = new Set(current); if (event.target.checked) next.add(entry.id); else next.delete(entry.id); return next })} /> },
             { key: 'query', header: 'Case', accessor: (entry) => <div className="min-w-[240px]"><p className="line-clamp-2 font-medium text-ink">{entry.query}</p><p className="mt-1 font-mono text-[10px] text-muted">{entry.id} · {entry.sourceTraceId}</p></div> },
-            { key: 'type', header: 'Type', accessor: (entry) => <StatusBadge status={entry.type} tone="info" showIcon={false} /> },
-            { key: 'expected', header: 'Expected behavior', accessor: (entry) => <div className="max-w-[280px]"><p className="line-clamp-2 text-[11px] text-ink">{entry.expectedResult || 'Missing expected result'}</p><p className="mt-1 line-clamp-1 text-[10px] text-muted">{entry.constraints || 'Missing constraints'}</p></div> },
-            { key: 'tags', header: 'Tags', accessor: (entry) => <div className="flex max-w-[180px] flex-wrap gap-1">{entry.capabilityTags.map((tag) => <span key={tag} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-muted">{tag}</span>)}</div> },
-            { key: 'label', header: 'Golden', accessor: (entry) => <StatusBadge status={entry.goldenLabel} /> },
-            { key: 'enabled', header: 'Status', accessor: (entry) => <Toggle checked={entry.enabled} onChange={(checked) => toggleEntry(entry, checked)} label={entry.enabled ? 'Enabled' : 'Disabled'} /> }
+            { key: 'type', header: '类型', accessor: (entry) => <StatusBadge status={entry.type} tone="info" showIcon={false} /> },
+            { key: 'expected', header: '预期行为', accessor: (entry) => <div className="max-w-[280px]"><p className="line-clamp-2 text-[11px] text-ink">{entry.expectedResult || '缺少预期结果'}</p><p className="mt-1 line-clamp-1 text-[10px] text-muted">{entry.constraints || '缺少约束条件'}</p></div> },
+            { key: 'tags', header: '标签', accessor: (entry) => <div className="flex max-w-[180px] flex-wrap gap-1">{entry.capabilityTags.map((tag) => <span key={tag} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-muted">{tag}</span>)}</div> },
+            { key: 'label', header: 'Golden Label', accessor: (entry) => <StatusBadge status={entry.goldenLabel} /> },
+            { key: 'enabled', header: '状态', accessor: (entry) => <Toggle checked={entry.enabled} onChange={(checked) => toggleEntry(entry, checked)} label={entry.enabled ? '已启用' : '已停用'} /> }
           ]} />
         </div>}
       </>}
@@ -693,30 +693,30 @@ export function BenchmarksPage() {
   const runItems = state.benchmarks.map((run) => ({ id: run.id, label: `${run.createdAt.slice(0, 10)} · ${run.versionA} → ${run.versionB}`, count: run.caseResults.length }))
   return (
     <section className="space-y-5" aria-labelledby="benchmarks-title">
-      <PageIntro eyebrow="BENCHMARK / REGRESSION" title="Benchmark" description="用 Golden Dataset 比较两个 Agent 版本，把结果、过程和性能变化落到具体 Case 与 Trace。" actions={<Button icon={Database} onClick={() => navigateContext('/datasets')}>管理 Dataset</Button>} />
+      <PageIntro eyebrow="Benchmark / 回归" title="Benchmark" description="用 Golden Dataset 比较两个 Agent 版本，把结果、过程和性能变化落到具体 Case 与 Trace。" actions={<Button icon={Database} onClick={() => navigateContext('/datasets')}>管理 Dataset</Button>} />
       <div className={sectionClass}>
-        <SectionHeader title="Create Benchmark" description="选择完整输入后运行确定性的 Mock Benchmark；历史 Run 不会被重新计算。" />
+        <SectionHeader title="创建 Benchmark" description="选择完整输入后运行确定性的 Mock Benchmark；历史 Run 不会被重新计算。" />
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <Field label="Dataset" required><SelectInput value={datasetId} onChange={(event) => setDatasetId(event.target.value)}><option value="">请选择 Dataset</option>{state.datasets.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.name} · {dataset.version}</option>)}</SelectInput></Field>
-          <Field label="Version A" required><SelectInput value={versionA} onChange={(event) => setVersionA(event.target.value)}><option value="">请选择</option>{VERSION_OPTIONS.map((version) => <option key={version} value={version}>{version}</option>)}</SelectInput></Field>
-          <Field label="Version B" required><SelectInput value={versionB} onChange={(event) => setVersionB(event.target.value)}><option value="">请选择</option>{VERSION_OPTIONS.map((version) => <option key={version} value={version}>{version}</option>)}</SelectInput></Field>
-          <Field label="Environment" required><SelectInput value={environment} onChange={(event) => setEnvironment(event.target.value as Environment)}><option value="Production">Production</option><option value="Staging">Staging</option></SelectInput></Field>
-          <Field label="Eval Rubric" required><TextInput value={rubricVersion} onChange={(event) => setRubricVersion(event.target.value)} /></Field>
+          <Field label="版本 A" required><SelectInput value={versionA} onChange={(event) => setVersionA(event.target.value)}><option value="">请选择</option>{VERSION_OPTIONS.map((version) => <option key={version} value={version}>{version}</option>)}</SelectInput></Field>
+          <Field label="版本 B" required><SelectInput value={versionB} onChange={(event) => setVersionB(event.target.value)}><option value="">请选择</option>{VERSION_OPTIONS.map((version) => <option key={version} value={version}>{version}</option>)}</SelectInput></Field>
+          <Field label="环境" required><SelectInput value={environment} onChange={(event) => setEnvironment(event.target.value as Environment)}><option value="Production">Production</option><option value="Staging">Staging</option></SelectInput></Field>
+          <Field label="Eval Rubric 版本" required><TextInput value={rubricVersion} onChange={(event) => setRubricVersion(event.target.value)} /></Field>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-3"><Button icon={GitCompareArrows} variant="primary" disabled={!datasetId || !versionA || !versionB || !environment || !rubricVersion || versionA === versionB} onClick={launch}>Run Benchmark</Button>{runError && <span role="alert" className="text-xs text-fail">{runError}</span>}<span className="text-[11px] text-muted">Run 只纳入启用的 Dataset entries。</span></div>
       </div>
       {state.benchmarks.length > 0 && <div className={sectionClass}>
-        <SectionHeader title="Benchmark history" description="打开历史 Run 可恢复当时的版本、Dataset、Rubric 和 Case 分类。" />
+        <SectionHeader title="Benchmark 历史" description="打开历史 Run 可恢复当时的版本、Dataset、Rubric 和 Case 分类。" />
         <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">{runItems.map((item) => { const run = state.benchmarks.find((candidate) => candidate.id === item.id); return <button key={item.id} type="button" onClick={() => { setSelectedRunId(item.id); setBucket('Regressed Cases'); setSelectedResultId(undefined) }} className={cn('rounded-md border p-3 text-left transition hover:border-accent/50', selectedRun?.id === item.id ? 'border-accent bg-accent/5' : 'border-line bg-slate-50/50')}><div className="flex items-center justify-between gap-2"><span className="font-mono text-[10px] text-accent">{item.id}</span><StatusBadge status={run?.status ?? 'Unknown'} /></div><p className="mt-2 text-xs font-semibold text-ink">{item.label}</p><p className="mt-1 text-[10px] text-muted">{run?.datasetVersion} · {run?.environment} · {run?.rubricVersion}</p><p className="mt-2 text-[11px] text-muted">{item.count} comparable cases</p></button> })}</div>
       </div>}
       {selectedRun ? <>
         <div className={sectionClass}>
-          <SectionHeader title="Version result" description="Result Eval、Process Eval 和 Performance Metric 分组展示，不合并为单一总分。" meta={<span>{selectedRun.datasetVersion} · {selectedRun.versionA} vs {selectedRun.versionB} · completed {formatDate(selectedRun.completedAt)}</span>} />
+        <SectionHeader title="版本结果" description="Result Eval、Process Eval 和 Performance Metric 分组展示，不合并为单一总分。" meta={<span>{selectedRun.datasetVersion} · {selectedRun.versionA} vs {selectedRun.versionB} · 完成于 {formatDate(selectedRun.completedAt)}</span>} />
           <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[680px] text-left text-xs"><thead className="border-b border-line text-[10px] uppercase tracking-wide text-muted"><tr><th className="px-3 py-2">Metric</th><th className="px-3 py-2">Family</th><th className="px-3 py-2 text-right">Version A</th><th className="px-3 py-2 text-right">Version B</th><th className="px-3 py-2 text-right">Delta</th><th className="px-3 py-2 text-right">Sources</th></tr></thead><tbody className="divide-y divide-slate-100">{selectedRun.metrics.map((item) => <tr key={item.id} className={cn('cursor-pointer transition hover:bg-slate-50', metricId === item.id && 'bg-accent/5')} onClick={() => setMetricId(item.id)}><td className="px-3 py-3 font-medium text-ink">{item.label}</td><td className="px-3 py-3"><StatusBadge status={item.family} tone={item.family === 'Result Eval' ? 'info' : item.family === 'Process Eval' ? 'derived' : 'warn'} showIcon={false} /></td><td className="px-3 py-3 text-right tabular-nums text-muted">{metricValue(item.versionA, item)}</td><td className="px-3 py-3 text-right tabular-nums text-ink">{metricValue(item.versionB, item)}</td><td className={cn('px-3 py-3 text-right font-semibold tabular-nums', item.delta >= 0 && item.unit !== 'duration' ? 'text-pass' : item.delta < 0 && item.unit === 'duration' ? 'text-pass' : 'text-fail')}>{metricDelta(item)}</td><td className="px-3 py-3 text-right text-accent">{item.sourceTaskIds.length}</td></tr>)}</tbody></table></div>
           {metric && <div className="mt-3 rounded-md border border-accent/20 bg-accent/5 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-semibold text-ink">{metric.label} breakdown</p><span className="text-[11px] text-muted">{sourceTasks.length} contributing tasks</span></div><div className="mt-2 flex flex-wrap gap-2">{sourceTasks.slice(0, 12).map((task) => <button key={task.id} type="button" onClick={() => navigateContext('/tasks', { params: { taskId: task.id, traceId: task.traceId } })} className="rounded border border-accent/20 bg-white px-2 py-1 font-mono text-[10px] text-accent hover:bg-accent/10">{task.id}</button>)}</div></div>}
         </div>
         <div className={sectionClass}>
-          <SectionHeader title="Case classification" description="点击分类查看具体 Case，并继续打开 A/B Trace。" meta={<span>{selectedRun.caseResults.length} total comparison results</span>} />
+          <SectionHeader title="Case 分类" description="点击分类查看具体 Case，并继续打开 A/B Trace。" meta={<span>共 {selectedRun.caseResults.length} 条对比结果</span>} />
           <div className="mt-3"><Tabs aria-label="Benchmark case buckets" activeId={bucket} onChange={(id) => { setBucket(id as BenchmarkBucket); setSelectedResultId(undefined) }} items={BUCKETS.map((item) => ({ id: item, label: item, count: buckets[item].length }))} variant="pill" size="sm" /></div>
           <div className="mt-3"><DataTable<BenchmarkCaseResult> rows={bucketRows} rowKey={(result) => result.id} onRowClick={(result) => setSelectedResultId(result.id)} selectedRowId={selectedResultId} columns={[{ key: 'task', header: 'Case / Task', accessor: (result) => { const task = getTaskById(state, result.taskId); return <div className="min-w-[260px]"><p className="line-clamp-2 font-medium text-ink">{task?.query ?? result.taskId}</p><p className="mt-1 font-mono text-[10px] text-muted">{result.taskId} · {result.traceAId ?? 'trace A'} ↔ {result.traceBId ?? 'trace B'}</p></div> } }, { key: 'bucket', header: 'Bucket', accessor: (result) => <StatusBadge status={result.bucket} /> }, { key: 'reason', header: 'Classification rationale', accessor: (result) => <span className="line-clamp-2 max-w-[420px] text-[11px] leading-5 text-muted">{result.reason}</span> }, { key: 'action', header: '', accessor: (result) => <Button size="sm" icon={GitCompareArrows} onClick={(event) => { event.stopPropagation(); setSelectedResultId(result.id) }}>Compare</Button> }]} /></div>
         </div>

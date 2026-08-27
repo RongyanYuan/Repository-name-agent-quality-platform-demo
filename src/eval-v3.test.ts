@@ -6,7 +6,6 @@ describe('v3 module diagnostics', () => {
   it('reports state counts and evidence coverage instead of a problem percentage', () => {
     const diagnostics = getModuleDiagnostics(qualityData, defaultFilters)
     const memory = diagnostics.find((item) => item.nodeType === 'Memory')
-    const context = diagnostics.find((item) => item.nodeType === 'Context Assembly')
     expect(memory).toMatchObject({
       stateCounts: expect.objectContaining({ FAIL: expect.any(Number), PASS: expect.any(Number) }),
       firstFailureCount: expect.any(Number),
@@ -14,7 +13,7 @@ describe('v3 module diagnostics', () => {
       evidenceCoverage: expect.objectContaining({ observed: expect.any(Number), total: expect.any(Number), rate: expect.any(Number) })
     })
     expect(memory?.firstFailureCount).toBeGreaterThan(0)
-    expect(context?.stateCounts.DERIVED_FAIL).toBeGreaterThan(0)
+    expect(diagnostics.some((item) => item.nodeType === 'Context Assembly')).toBe(false)
     expect(memory?.evidenceCoverage.rate).toBeLessThanOrEqual(100)
   })
 

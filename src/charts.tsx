@@ -137,7 +137,7 @@ export function HistogramChart({ data, title, description, onBinClick, valueForm
 
 export interface TimeSeriesPoint { label: string; value: number; id?: string; [key: string]: string | number | undefined }
 export function MiniTrend({ data, color = '#1d5fd1', onPointClick, ariaLabel = 'Trend' }: { data: readonly TimeSeriesPoint[]; color?: string; onPointClick?: (point: TimeSeriesPoint, index: number) => void; ariaLabel?: string }) {
-  if (!data.length) return <span className="text-[11px] text-slate-400">No data</span>
+  if (!data.length) return <span className="text-[11px] text-slate-400">暂无数据</span>
   return <div className="h-8 min-w-[100px]"><ResponsiveContainer width="100%" height="100%"><RechartsLineChart data={data as TimeSeriesPoint[]} margin={{ top: 3, right: 1, left: 1, bottom: 3 }} onClick={(state) => { const index = typeof state?.activeTooltipIndex === 'number' ? state.activeTooltipIndex : -1; if (index >= 0) onPointClick?.(data[index], index) }}><Line dataKey="value" stroke={color} strokeWidth={1.8} dot={false} isAnimationActive={false} /></RechartsLineChart></ResponsiveContainer><span className="sr-only" aria-label={ariaLabel}>{data.map((point) => `${point.label} ${point.value}`).join(', ')}</span></div>
 }
 
