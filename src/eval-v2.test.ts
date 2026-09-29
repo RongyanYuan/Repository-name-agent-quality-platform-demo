@@ -129,9 +129,10 @@ describe('Office Agent eval v2 selectors', () => {
     expect(performance.cache.hitRate).toBeGreaterThanOrEqual(0)
   })
 
-  it('round-trips v2 URL filters', () => {
+  it('keeps the legacy codec scoped to global URL filters', () => {
     const filters = { ...defaultFilters, acceptanceSignal: 'negative_feedback' as const, validity: 'FAIL' as const, processStatus: 'out_of_expectation' as const, benchmarkId: 'benchmark-2026-08-24', interceptionReason: 'Potentially sensitive content detected' }
-    expect(parseFilters(`?${serializeFilters(filters)}`)).toMatchObject(filters)
+    expect(parseFilters(`?${serializeFilters(filters)}`)).toMatchObject({ ...defaultFilters, timeRange: filters.timeRange, businessType: filters.businessType, agentVersion: filters.agentVersion, environment: filters.environment, search: filters.search, skill: filters.skill })
+    expect(serializeFilters(filters)).not.toContain('processEval')
   })
 
   it('drills TTFT and interception reason signals to the matching tasks', () => {

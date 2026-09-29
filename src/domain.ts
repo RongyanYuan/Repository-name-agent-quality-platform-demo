@@ -501,6 +501,12 @@ export interface FilterState {
   validity?: JudgeStatus
   processStatus?: JudgeStatus | 'out_of_expectation'
   benchmarkId?: string
+  skillVersion?: string
+  processEval?: JudgeStatus
+  outcomeEval?: JudgeStatus
+  logId?: string
+  multiScene?: 'yes' | 'no'
+  routingTags?: string[]
 }
 
 export interface QualityData {

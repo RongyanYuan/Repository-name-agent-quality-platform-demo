@@ -87,9 +87,10 @@ describe('selectors', () => {
     expect(tools.every((metric) => metric.calls >= metric.success)).toBe(true)
   })
 
-  it('round-trips URL filter state', () => {
-    const filters = { ...defaultFilters, businessType: 'PPT' as const, agentVersion: 'agent-2.5.0', search: 'trace-001', rootCause: 'Memory' as const, badcase: 'yes' as const }
-    expect(parseFilters(`?${serializeFilters(filters)}`)).toMatchObject(filters)
+  it('round-trips global URL filter state without owning Case-local fields', () => {
+    const filters = { ...defaultFilters, businessType: 'PPT' as const, agentVersion: 'agent-2.5.0', search: 'trace-001', rootCause: 'Memory' as const, badcase: 'yes' as const, skillVersion: '2.6.0', processEval: 'FAIL' as const, outcomeEval: 'PASS' as const, logId: 'log-ppt-skill', multiScene: 'yes' as const, routingTags: ['策略迭代', 'Agent 迭代'] }
+    expect(parseFilters(`?${serializeFilters(filters)}`)).toMatchObject({ ...defaultFilters, businessType: 'PPT', agentVersion: 'agent-2.5.0', search: 'trace-001' })
+    expect(serializeFilters(filters)).not.toContain('skillVersion')
   })
 
   it('applies the selected time window to task data', () => {

@@ -25,6 +25,7 @@ import {
   type Task,
   type TaskStatus
 } from './domain'
+import { parseGlobalFilters, serializeGlobalFilters } from './urlState'
 
 export const defaultFilters: FilterState = {
   timeRange: '7d',
@@ -871,29 +872,11 @@ export const getBenchmarkBuckets = (run?: BenchmarkRun) => {
 
 export const familyColor = (family: EvalFamily) => family === 'Result Eval' ? 'blue' : family === 'Process Eval' ? 'violet' : 'orange'
 
-export const serializeFilters = (filters: FilterState) => {
-  const params = new URLSearchParams()
-  Object.entries(filters).forEach(([key, value]) => {
-    if (value && value !== 'All Versions' && value !== 'All') params.set(key, String(value))
-  })
-  return params.toString()
-}
+/** @deprecated Use the global URL codec from urlState. */
+export const serializeFilters = (filters: FilterState) => serializeGlobalFilters(filters)
 
-export const parseFilters = (search: string): FilterState => {
-  const params = new URLSearchParams(search)
-  const result: FilterState = { ...defaultFilters }
-  const timeRange = params.get('timeRange') as FilterState['timeRange'] | null
-  const businessType = params.get('businessType') as FilterState['businessType'] | null
-  const environment = params.get('environment') as FilterState['environment'] | null
-  if (timeRange && ['24h', '7d', '14d', '30d'].includes(timeRange)) result.timeRange = timeRange
-  if (businessType && (BUSINESS_TYPES as readonly string[]).includes(businessType)) result.businessType = businessType as FilterState['businessType']
-  if (environment && (ENVIRONMENTS as readonly string[]).includes(environment)) result.environment = environment as FilterState['environment']
-  for (const key of ['agentVersion', 'search', 'status', 'outcomeType', 'complexity', 'rootCause', 'skill', 'badcase', 'golden', 'metric', 'anomalyTool', 'anomalyWindow', 'interceptionReason', 'acceptanceSignal', 'validity', 'processStatus', 'benchmarkId'] as const) {
-    const value = params.get(key)
-    if (value) (result as unknown as Record<string, unknown>)[key] = value
-  }
-  return result
-}
+/** @deprecated Use the global URL codec from urlState. */
+export const parseFilters = (search: string): FilterState => ({ ...defaultFilters, ...parseGlobalFilters(search, defaultFilters) })
 
 export const formatPercent = (value: number) => `${value.toFixed(value % 1 ? 1 : 0)}%`
 export const formatDuration = (value: number) => value >= 1000 ? `${(value / 1000).toFixed(1)}s` : `${Math.round(value)}ms`

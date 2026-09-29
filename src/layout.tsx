@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useRef, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
 import {
-  Activity,
   ArrowLeft,
+  Beaker,
+  Boxes,
   ChevronRight,
   CircleHelp,
+  ClipboardCheck,
   Database,
-  GitCompareArrows,
+  GitBranch,
   LayoutDashboard,
   ListTree,
+  PackageCheck,
   Search,
   ShieldAlert,
   SlidersHorizontal,
+  Sparkles,
   type LucideIcon
 } from 'lucide-react'
 import {
@@ -22,8 +26,10 @@ import {
 } from 'react-router-dom'
 import { BUSINESS_TYPES, ENVIRONMENTS, type FilterState } from './domain'
 import { VERSION_OPTIONS } from './data'
-import { getScopeLabel, parseFilters, serializeFilters } from './selectors'
+import { defaultFilters, getScopeLabel } from './selectors'
+import { DETAIL_QUERY_KEYS, GLOBAL_FILTER_KEYS, parseGlobalFilters, serializeGlobalFilters } from './urlState'
 import { useQuality } from './store'
+import { useEvolution } from './evolution/store'
 
 export interface NavigationItem {
   path: string
@@ -34,14 +40,16 @@ export interface NavigationItem {
 }
 
 export const NAV_ITEMS: NavigationItem[] = [
-  { path: '/overview', label: '质量总览', shortLabel: '总览', description: 'Agent 效果、过程质量与根因分布', icon: LayoutDashboard },
-  { path: '/performance', label: '性能监控', shortLabel: '性能', description: '时延、成本、Token 与调用稳定性', icon: Activity },
-  { path: '/anomaly-monitoring', label: '异常监控', shortLabel: '异常', description: '流式、成本、Tool 与拦截异常', icon: ShieldAlert },
-  { path: '/tasks', label: 'Task / Trace', shortLabel: '任务', description: '从任务结果下钻到完整执行链路', icon: ListTree },
-  { path: '/cases', label: 'Case & Badcase', shortLabel: '案例', description: '人工复核、归因与 Badcase 治理', icon: ShieldAlert },
-  { path: '/datasets', label: 'Golden Dataset', shortLabel: '数据集', description: '维护可复用的黄金与挑战案例', icon: Database },
-  { path: '/benchmarks', label: 'Benchmark', shortLabel: '基准', description: '版本回归、对比与失败案例', icon: GitCompareArrows },
-  { path: '/evaluation-config', label: '评测配置', shortLabel: '配置', description: '结果、过程和性能评测规则', icon: SlidersHorizontal }
+  { path: '/overview', label: '治理总览', shortLabel: '总览', description: '质量、过程、性能与自进化漏斗', icon: LayoutDashboard },
+  { path: '/cases', label: 'Case / Trace 分析', shortLabel: 'Case', description: '从线上任务定位 Trace、Evidence 与治理进度', icon: ListTree },
+  { path: '/evaluations', label: '评测中心', shortLabel: '评测', description: '独立管理过程评测、产物评测与人工修订', icon: ClipboardCheck },
+  { path: '/issues', label: '归因与问题簇', shortLabel: '归因', description: '多问题归因、分流与聚类优化', icon: ShieldAlert },
+  { path: '/variants', label: '能力变体', shortLabel: '变体', description: '管理候选能力版本及来源证据', icon: GitBranch },
+  { path: '/experiments', label: '实验与准出', shortLabel: '实验', description: '单变体、窗口组合实验与准出报告', icon: Beaker },
+  { path: '/releases', label: '发布版本', shortLabel: '发布', description: '发布、灰度、观察和回滚追踪', icon: PackageCheck },
+  { path: '/assets-skills', label: '资产与 Skill', shortLabel: '资产', description: 'Skill 版本、私库资产与进化记录', icon: Boxes },
+  { path: '/datasets', label: '数据集', shortLabel: '数据集', description: '归因集、泛化集、回归集与窗口数据快照', icon: Database },
+  { path: '/rules', label: '规则配置', shortLabel: '规则', description: '触发门槛、实验次数与指标门禁', icon: SlidersHorizontal }
 ]
 
 const TIME_OPTIONS: Array<{ value: FilterState['timeRange']; label: string }> = [
@@ -53,26 +61,9 @@ const TIME_OPTIONS: Array<{ value: FilterState['timeRange']; label: string }> = 
 
 // These keys are serialized by selectors and are deliberately kept separate
 // from detail/context keys so a Task -> Trace -> Case journey can be restored.
-export const FILTER_KEYS = [
-  'timeRange',
-  'agentVersion',
-  'businessType',
-  'environment',
-  'search',
-  'status',
-  'outcomeType',
-  'complexity',
-  'rootCause',
-  'skill',
-  'badcase',
-  'golden',
-  'metric',
-  'anomalyTool',
-  'anomalyWindow',
-  'interceptionReason'
-] as const
+export const FILTER_KEYS = GLOBAL_FILTER_KEYS
 
-export const DETAIL_KEYS = ['taskId', 'traceId', 'caseId', 'datasetId', 'entryId', 'benchmarkId', 'comparison', 'bucket'] as const
+export const DETAIL_KEYS = DETAIL_QUERY_KEYS
 
 const routeForPath = (pathname: string) => NAV_ITEMS.find((item) => pathname === item.path || pathname.startsWith(`${item.path}/`))
 
@@ -102,23 +93,22 @@ export interface ContextPathOptions {
  * Hook used by pages for drill-down navigation. Global and local filters are
  * retained by default; detail keys can be cleared when returning to a list.
  */
+export function buildContextHref(currentSearch: string, path: string, options: ContextPathOptions = {}) {
+  const [pathname, rawSearch = ''] = path.split('?')
+  const params = new URLSearchParams(currentSearch)
+  const targetParams = new URLSearchParams(rawSearch)
+  ;(options.clear ?? []).forEach((key) => params.delete(key))
+  targetParams.forEach((value, key) => params.set(key, value))
+  Object.entries(options.params ?? {}).forEach(([key, value]) => { if (value === undefined || value === '') params.delete(key); else params.set(key, value) })
+  const search = params.toString()
+  return `${pathname}${search ? `?${search}` : ''}`
+}
+
 export function useContextNavigation() {
   const location = useLocation()
   const navigate = useNavigate()
 
-  const contextHref = useCallback((path: string, options: ContextPathOptions = {}) => {
-    const [pathname, rawSearch = ''] = path.split('?')
-    const params = new URLSearchParams(location.search)
-    const targetParams = new URLSearchParams(rawSearch)
-    ;(options.clear ?? []).forEach((key) => params.delete(key))
-    targetParams.forEach((value, key) => params.set(key, value))
-    Object.entries(options.params ?? {}).forEach(([key, value]) => {
-      if (value === undefined || value === '') params.delete(key)
-      else params.set(key, value)
-    })
-    const search = params.toString()
-    return `${pathname}${search ? `?${search}` : ''}`
-  }, [location.search])
+  const contextHref = useCallback((path: string, options: ContextPathOptions = {}) => buildContextHref(location.search, path, options), [location.search])
 
   const navigateContext = useCallback((path: string, options: ContextPathOptions = {}) => {
     navigate(contextHref(path, options))
@@ -131,6 +121,7 @@ function GlobalFilterBar() {
   const location = useLocation()
   const navigate = useNavigate()
   const { state, dispatch } = useQuality()
+  const { state: evolutionState } = useEvolution()
   const filters = state.filters
 
   const setFilter = useCallback(<K extends keyof FilterState>(key: K, value: FilterState[K]) => {
@@ -140,7 +131,7 @@ function GlobalFilterBar() {
   const onSearchChange = (event: ChangeEvent<HTMLInputElement>) => setFilter('search', event.target.value)
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (location.pathname !== '/tasks') navigate('/tasks')
+    if (location.pathname !== '/cases') navigate('/cases')
   }
 
   const drilldownFilters = [
@@ -194,6 +185,13 @@ function GlobalFilterBar() {
             {ENVIRONMENTS.map((environment) => <option value={environment} key={environment}>{environment}</option>)}
           </select>
         </div>
+        <div className="filter-group">
+          <label htmlFor="global-skill">全局 Skill</label>
+          <select id="global-skill" value={filters.skill ?? ''} onChange={(event) => setFilter('skill', event.target.value || undefined)}>
+            <option value="">全部 Skill</option>
+            {evolutionState.skills.map((skill) => <option key={skill.id} value={skill.id}>{skill.name}</option>)}
+          </select>
+        </div>
         <form className="global-search" onSubmit={submitSearch} role="search">
           <Search size={16} aria-hidden="true" />
           <label className="sr-only" htmlFor="global-search-input">搜索 task_id、query 或 trace_id</label>
@@ -229,7 +227,7 @@ function Breadcrumbs() {
         <span>返回</span>
       </button>
       <nav className="breadcrumbs" aria-label="面包屑导航">
-        <Link to={{ pathname: '/overview', search: location.search }}>质量总览</Link>
+        <Link to={{ pathname: '/overview', search: location.search }}>治理总览</Link>
         {current && current.path !== '/overview' && <><ChevronRight size={14} aria-hidden="true" /><Link to={{ pathname: current.path, search: location.search }}>{current.label}</Link></>}
         {detailLabel && <><ChevronRight size={14} aria-hidden="true" /><span className="breadcrumb-current">{detailLabel}</span></>}
       </nav>
@@ -244,15 +242,15 @@ function Sidebar() {
   return (
     <aside className="app-sidebar">
       <div className="brand-block">
-        <div className="brand-mark" aria-hidden="true">AQ</div>
+        <div className="brand-mark" aria-hidden="true"><Sparkles size={18} /></div>
         <div>
-          <div className="brand-name">Agent Quality</div>
-          <div className="brand-subtitle">质量治理工作台</div>
+          <div className="brand-name">Office Agent</div>
+          <div className="brand-subtitle">自进化治理平台</div>
         </div>
       </div>
       <div className="sidebar-scope">
         <span className="status-dot status-dot--live" aria-hidden="true" />
-        <span>Demo 工作区</span>
+        <span>Mock 演示工作区</span>
       </div>
       <nav className="primary-nav" aria-label="主导航">
         <div className="nav-caption">工作区</div>
@@ -277,7 +275,7 @@ function Sidebar() {
           <CircleHelp size={17} aria-hidden="true" />
           <span>使用说明</span>
         </button>
-        <div className="sidebar-version"><span>工作区</span><strong>v0.1 Demo</strong></div>
+        <div className="sidebar-version"><span>本地数据</span><strong>Mock Demo</strong></div>
       </div>
       {current && <span className="sr-only">当前页面：{current.label}</span>}
     </aside>
@@ -286,18 +284,19 @@ function Sidebar() {
 
 function TopBar() {
   const { state } = useQuality()
+  const { state: evolutionState } = useEvolution()
   const location = useLocation()
   const current = routeForPath(location.pathname) ?? NAV_ITEMS[0]
   return (
     <header className="app-topbar">
       <div className="topbar-heading">
-        <div className="eyebrow">AGENT QUALITY PLATFORM</div>
+        <div className="eyebrow">OFFICE AGENT SELF-EVOLUTION</div>
         <h1>{current.label}</h1>
         <p>{current.description}</p>
       </div>
       <div className="topbar-meta">
         <div className="scope-pill" title="当前全局数据范围">{getScopeLabel(state.filters)}</div>
-        <div className="updated-at"><span className="status-dot status-dot--live" aria-hidden="true" /><span>数据更新于 {formatUpdatedAt(state.updatedAt)}</span></div>
+        <div className="updated-at"><span className="status-dot status-dot--live" aria-hidden="true" /><span>Mock 数据更新于 {formatUpdatedAt(evolutionState.updatedAt)}</span></div>
       </div>
     </header>
   )
@@ -314,8 +313,9 @@ export function DashboardLayout({ children }: { children?: ReactNode }) {
   // races with the state -> URL effect below and can overwrite a fresh user
   // selection with the previous URL for one render (or indefinitely).
   useEffect(() => {
-    const urlFilters = parseFilters(location.search)
-    if (!filtersEqual(urlFilters, state.filters)) dispatch({ type: 'SET_FILTERS', filters: urlFilters })
+    const urlFilters = parseGlobalFilters(location.search, defaultFilters)
+    const currentGlobal = Object.fromEntries(GLOBAL_FILTER_KEYS.map((key) => [key, state.filters[key]])) as unknown as typeof urlFilters
+    if (!filtersEqual(urlFilters, currentGlobal)) dispatch({ type: 'SET_FILTERS', filters: urlFilters })
   }, [dispatch, location.search])
 
   // Keep all known filter values serializable while preserving detail IDs and
@@ -327,7 +327,7 @@ export function DashboardLayout({ children }: { children?: ReactNode }) {
     if (filtersEqual(previousFiltersRef.current, state.filters)) return
     previousFiltersRef.current = state.filters
     const current = new URLSearchParams(location.search)
-    const encoded = new URLSearchParams(serializeFilters(state.filters))
+    const encoded = new URLSearchParams(serializeGlobalFilters(state.filters))
     FILTER_KEYS.forEach((key) => current.delete(key))
     encoded.forEach((value, key) => current.set(key, value))
     const nextSearch = current.toString()

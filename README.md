@@ -1,40 +1,47 @@
-# Agent Quality Platform Demo
+# Office Agent 自进化治理平台
 
-Office Agent 评测与质量治理平台的完整前端 Mock Demo。首页质量总览按新版 PRD 拆成四个独立 Section：用户满意度（北极星）、合格产物、过程效率、模块诊断与首错归因。
+面向 Office Agent 的可运行中文治理 Demo，覆盖从线上 Case 到发布回查的完整闭环。
 
-## 指标口径
+线上 Case → 过程/产物评测 → 多问题归因 → 直接修复或问题聚类 → 能力变体 → 单变体实验 → 窗口组合实验 → 准出决策 → 发布与回查
 
-- 用户满意度 = 最终被用户接受的有效产物数 / 全部产物数；有效产物 = 合格产物且过程有效。过程业务预期未建立（UNKNOWN）的产物不计入有效产物。
-- 合格产物率由结果类型一致性、意图一致性、约束满足、准确性、文件有效性五个硬门槛共同判定。
-- 过程效率达标率独立于合格产物率；「过程效率不符业务预期率」固定为过程效率未达标产物数 / 全部产物数。
-- 模块评测使用 PASS、FAIL、DERIVED_FAIL、UNKNOWN、N/A 五态；首错归因只统计首个非派生失败节点。
-- 性能页区分原始时延效率、TTFT、吞吐、Input/Output Token、缓存、Tool 频率、一次执行成功率以及风控/商业化拦截。无数据的 TTFT 或基线显示 UNKNOWN / 基线未建立。
+## 页面
 
-## Run
+- /overview 治理总览：质量、过程、性能、风险/商业化监控，以及按 Case、问题、变体、实验和决策区分统计单位的进化漏斗。
+- /cases Case / Trace 分析：Session、多轮对话、Trace 节点、日志、Evidence、Artifact、评测、归因和治理链路。
+- /evaluations 评测中心：过程评测与产物评测独立列表、详情、版本、Evidence 和人工修订历史。
+- /issues 归因与问题簇：一 Case 多问题、多归因、多路分发、直接优化与聚类优化。
+- /variants 能力变体：来源 Case/问题簇、修改内容、版本、Evidence 与实验关联。
+- /experiments 实验与准出：单变体实验、窗口组合实验、重复运行、配置快照、指标、风险与决策。
+- /releases 发布版本：待发布、灰度、正式发布、观察、回滚及反向追踪。
+- /assets-skills 资产与 Skill：私库/公库、脱敏、审核、发布和待建设入口。
+- /datasets 数据集：归因集、泛化集、回归集、窗口线上数据集及版本。
+- /rules 规则配置：触发门槛、实验次数、指标门禁和性能基线；未确定项显示“待配置”。
 
-```bash
+旧地址 /tasks、/performance、/anomaly-monitoring、/benchmarks、/evaluation-config 保留兼容跳转。
+
+## 启动
+
 pnpm install
 pnpm dev -- --host 127.0.0.1 --port 4174
-```
 
-Open `http://127.0.0.1:4174`.
+打开 http://127.0.0.1:4174/overview 。
 
-The demo keeps result evaluation, process evaluation and performance signals separate while connecting:
+## Mock 与真实接口边界
 
-`Metric -> Task/Trace -> Eval Evidence -> Case/Badcase -> Golden Dataset -> Benchmark -> A/B Trace`
+- 全部指标、Case、评测、问题簇、变体、实验和发布均为结构化 Mock 数据，不代表真实线上表现。
+- 本地数据由带 schema version 的 Repository 和 LocalStorage 持久化，支持重置、迁移保护和审计轨迹。
+- 自动评测、人工修订、实验配置快照、准出决策和发布状态分开保存。
+- Mock 包含三条可追溯链：管理层 PPT 聚类进化并发布、确定性 Tool/Skill 错误直接修复、多归因多路分发。
+- Trace/Langfuse、Eval Agent、实验运行、资产生成与发布服务尚未连接；数据访问层预留真实接口。
+- 个人资产不会默认公开；进入公库必须经过脱敏、审核和发布。
 
-Mock data contains 61 Tasks and 30+ governance Cases across PPT, Excel, Word, Coding and General, with all three complexity levels, three task outcomes, ten root-cause categories, five judge states, missing TTFT/latency/cost baselines, Tool/Retry/Recovery boundaries, acceptance behavior variants, risk/commercial interception, and Golden/Historical/Challenge datasets.
+## 待配置规则
 
-异常监控页按 PRD 展示总时延与 TTFT 效率、模型吞吐、Input/Output Token 与成本偏离、缓存命中、Model/Tool 调用明细、一次执行成功率、Retry/Loop、Tool P50/P95 与 7/14 日基线，以及风控/商业化拦截率和原因分布。
+PRD 未提供的耗时/成本基线、多数聚类门槛和指标门禁显示“待配置”，不会用虚构阈值给出效率或准出结论。品味库按 Skill 累积 100 条相关数据是明确计数条件；实验默认每 Case 运行 3 次并可配置。
 
-All data is deterministic Mock Data and local to the browser session. No production APIs, database, credentials or real LLM Judge are used. The eight routes are:
+## 验证
 
-`/overview` · `/performance` · `/anomaly-monitoring` · `/tasks` · `/cases` · `/datasets` · `/benchmarks` · `/evaluation-config`
-
-首页模块诊断展示节点五态计数、首错次数、派生失败次数和 Evidence 覆盖，不把多条 Trace 的异常比例当作模块质量分数。合格产物与过程效率的子指标支持收起/展开；异常监控页承载原始监控信号和可下钻异常。
-
-Context 当前采用全量组装，不作为独立 Process Eval 或 KPI。Trace 保留 Context assembly snapshot，状态显示 `N/A`；当 Task Understanding、Decision、Skill 等模块受 Context 污染、缺失或矛盾影响时，LLM Judge 必须在该模块 reason 中说明，并关联 Root evidence 与具体 Rubric rule。
-
-Task 详情中的 Session ID 可打开完整 Session 对话；同一 Session 下每个 query 都展示对应的 Trace 入口。Trace 节点不再重复显示 `1 evidence` 等计数，Evidence 统一在 Judge 结果和 Observation Details 中查看。
-
-合格产物按层级拆分为 Office（PPT / Excel / Word，由 Office Eval Agent 返回评分、通过状态和原因）与其他产物（Coding / General，由通用规则评测）。收起子指标时，两层摘要仍然可见。
+pnpm run lint
+pnpm test
+pnpm run build
+pnpm run test:e2e

@@ -6,9 +6,9 @@ const viewports = [
   { name: 'mobile', width: 390, height: 844 }
 ]
 
-const routes = ['/overview', '/performance', '/anomaly-monitoring', '/tasks', '/cases', '/datasets', '/benchmarks', '/evaluation-config']
+const routes = ['/overview', '/cases', '/evaluations', '/issues', '/variants', '/experiments', '/releases', '/assets-skills', '/datasets', '/rules']
 
-test.describe('v2 responsive text-fit checks', () => {
+test.describe('self-evolution governance responsive text-fit checks', () => {
   for (const viewport of viewports) {
     test(`${viewport.name} routes have no horizontal overflow or clipped key headings`, async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height })
@@ -32,24 +32,19 @@ test.describe('v2 responsive text-fit checks', () => {
   }
 })
 
-test('v2 governance flow exposes provenance across Case, Dataset and Benchmark', async ({ page }) => {
+test('governance flow exposes provenance across Case, Dataset and Experiment', async ({ page }) => {
   await page.goto('/cases')
-  await page.getByText('根据刚才的销售 Excel 做一份 PPT，这次改成面向管理层。').click()
-  await expect(page.getByRole('heading', { name: 'Trace 首错归因' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '用户行为 Evidence' })).toBeVisible()
+  await page.getByText('根据刚才的销售 Excel 生成一份面向管理层的季度经营 PPT。').click()
+  await expect(page.getByRole('dialog', { name: /Case 详情 · case-ppt-management/ })).toBeVisible()
+  await page.getByRole('tab', { name: 'Trace 与 Evidence' }).click()
+  await expect(page.getByText('失败 Evidence / Log')).toBeVisible()
   await page.getByRole('button', { name: 'Close panel' }).click()
   await page.goto('/datasets')
-  await page.getByText('根据刚才的销售 Excel 做一份 PPT，这次改成面向管理层。').click()
-  await expect(page.getByText('文件有效性')).toBeVisible()
-  await expect(page.getByRole('heading', { name: '来源与版本历史' })).toBeVisible()
-  await page.goto('/benchmarks')
-  await expect(page.locator('main').getByRole('heading', { name: 'Benchmark', exact: true })).toBeVisible()
-  await expect(page.getByText('Result Eval、Process Eval 和 Performance Metric')).toBeVisible()
-})
-
-test('anomaly monitoring drills into filtered Task / Trace', async ({ page }) => {
-  await page.goto('/anomaly-monitoring')
-  await page.getByRole('button', { name: /风控拦截率/ }).click()
-  await expect(page).toHaveURL(/\/tasks\?.*metric=risk-interception/)
-  await expect(page.locator('main').getByRole('heading', { name: 'Task / Trace', exact: true })).toBeVisible()
+  await page.getByText('原始归因集').click()
+  await expect(page.getByRole('dialog', { name: '数据集详情' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '本地 Case 成员' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'case-ppt-management' })).toBeVisible()
+  await page.goto('/experiments')
+  await expect(page.locator('main').getByRole('heading', { name: '实验与准出', exact: true })).toBeVisible()
+  await expect(page.getByText(/Baseline|Candidate/).first()).toBeVisible()
 })
