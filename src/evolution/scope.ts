@@ -22,12 +22,16 @@ export function scopeEvolutionState(state: EvolutionState, filters: FilterState)
     if (filters.agentVersion !== 'All Versions' && item.agentVersion !== filters.agentVersion) return false
     if (filters.businessType !== 'All' && !item.scenario.toLocaleLowerCase().includes(filters.businessType.toLocaleLowerCase())) return false
     if (selectedSkill && !item.skillIds.some((id) => id.toLocaleLowerCase().includes(selectedSkill) || skillById.get(id)?.name.toLocaleLowerCase().includes(selectedSkill))) return false
-    if (query && ![item.id, item.sessionId, item.title, item.query, ...item.traceIds, ...item.skillIds].some((value) => value.toLocaleLowerCase().includes(query))) return false
+    if (query) {
+      const caseObservationLogIds = state.observations.filter((observation) => observation.caseId === item.id).map((observation) => observation.logId).filter((value): value is string => Boolean(value))
+      if (![item.id, item.sessionId, item.title, item.query, ...item.traceIds, ...item.skillIds, ...caseObservationLogIds].some((value) => value.toLocaleLowerCase().includes(query))) return false
+    }
     return true
   })
   const caseIds = new Set(cases.map((item) => item.id))
   const sessions = state.sessions.filter((item) => intersects(item.caseIds, caseIds))
   const traces = state.traces.filter((item) => caseIds.has(item.caseId))
+  const traceIds = new Set(traces.map((item) => item.id))
   const observations = state.observations.filter((item) => caseIds.has(item.caseId))
   const evidence = state.evidence.filter((item) => caseIds.has(item.caseId))
   const artifacts = state.artifacts.filter((item) => caseIds.has(item.caseId))
@@ -50,7 +54,22 @@ export function scopeEvolutionState(state: EvolutionState, filters: FilterState)
   const skills = filters.skill ? state.skills.filter((item) => skillIds.has(item.id)) : state.skills
   const assets = state.assets
   const datasets = state.datasets.filter((item) => intersects(item.caseIds, caseIds))
-  return { ...state, sessions, cases, traces, observations, evidence, artifacts, processEvals, outcomeEvals, attributions, issues, issueClusters, skills, assets, variants, datasets, experiments, experimentRuns, windows, gateDecisions, releases }
+  const tracePackages = state.tracePackages.filter((item) => traceIds.has(item.traceId) || caseIds.has(item.caseId))
+  const packageIds = new Set(tracePackages.map((item) => item.id))
+  const evaluationBatches = state.evaluationBatches.filter((item) => item.traceIds.some((id) => traceIds.has(id)))
+  const batchIds = new Set(evaluationBatches.map((item) => item.id))
+  const evaluationJobs = state.evaluationJobs.filter((item) => batchIds.has(item.batchId))
+  const evaluationFindings = state.evaluationFindings.filter((item) => packageIds.has(item.packageId) || caseIds.has(item.caseId))
+  const findingIds = new Set(evaluationFindings.map((item) => item.id))
+  const routingDecisions = state.routingDecisions.filter((item) => findingIds.has(item.findingId) || packageIds.has(item.packageId))
+  const decisionIds = new Set(routingDecisions.map((item) => item.id))
+  const routingDeliveries = state.routingDeliveries.filter((item) => decisionIds.has(item.decisionId) || packageIds.has(item.packageId) || caseIds.has(item.caseId))
+  const deliveryIds = new Set(routingDeliveries.map((item) => item.id))
+  const algorithmBadcases = state.algorithmBadcases.filter((item) => deliveryIds.has(item.deliveryId) || findingIds.has(item.findingId))
+  const badcaseIds = new Set(algorithmBadcases.map((item) => item.id))
+  const badcaseQueues = state.badcaseQueues.map((queue) => ({ ...queue, itemIds: queue.itemIds.filter((id) => badcaseIds.has(id)), deliveryIds: queue.deliveryIds.filter((id) => deliveryIds.has(id)) })).filter((queue) => queue.itemIds.length || queue.deliveryIds.length)
+  const tastePreferenceSignals = state.tastePreferenceSignals.filter((signal) => signal.caseIds.some((id) => caseIds.has(id)) || cases.some((item) => item.skillIds.includes(signal.skillId)))
+  return { ...state, sessions, cases, traces, observations, evidence, artifacts, processEvals, outcomeEvals, attributions, issues, issueClusters, skills, assets, variants, datasets, experiments, experimentRuns, windows, gateDecisions, releases, evaluationBatches, evaluationJobs, tracePackages, evaluationFindings, routingPolicies: state.routingPolicies, routingDecisions, routingDeliveries, algorithmBadcases, badcaseQueues, tastePreferenceSignals }
 }
 
 export function useScopedEvolution() {

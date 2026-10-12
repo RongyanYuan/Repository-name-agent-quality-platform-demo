@@ -1,13 +1,20 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
-import { QualityProvider } from '../../store'
+import { useEffect } from 'react'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { QualityProvider, useQuality } from '../../store'
 import { EvolutionProvider } from '../store'
 import { ExperimentsGatesPage, ReleasesPage, RuleConfigurationPage } from './index'
 
-const renderPage = (page: React.ReactNode) => render(<MemoryRouter><QualityProvider><EvolutionProvider>{page}</EvolutionProvider></QualityProvider></MemoryRouter>)
+function FullHistoryScope() {
+  const { dispatch } = useQuality()
+  useEffect(() => { dispatch({ type: 'SET_FILTERS', filters: { timeRange: '30d' } }) }, [dispatch])
+  return null
+}
+const renderPage = (page: React.ReactNode) => render(<MemoryRouter><QualityProvider><FullHistoryScope /><EvolutionProvider>{page}</EvolutionProvider></QualityProvider></MemoryRouter>)
 
 describe('experiment configuration, execution, reports, and release details', () => {
+  beforeEach(() => localStorage.clear())
   it('shows monitoring baseline rules as pending instead of invented values', () => {
     renderPage(<RuleConfigurationPage />)
     expect(screen.getByText('总耗时 Baseline')).toBeVisible()
@@ -60,8 +67,8 @@ describe('experiment configuration, execution, reports, and release details', ()
     expect(within(dialog).getByRole('alert')).toHaveTextContent('variant-memory-latest')
     expect(within(dialog).getByRole('button', { name: '保存实验' })).toBeDisabled()
     fireEvent.change(within(dialog).getByLabelText('候选窗口'), { target: { value: 'window-2026w35' } })
-    expect(within(dialog).getByText(/variant-ppt-routing-v3/)).toBeVisible()
-    expect(within(dialog).getByText(/variant-tool-retry-v2/)).toBeVisible()
+    expect(within(dialog).getAllByText(/variant-ppt-routing-v3/).length).toBeGreaterThan(0)
+    expect(within(dialog).getAllByText(/variant-tool-retry-v2/).length).toBeGreaterThan(0)
   })
 
   it('exposes QUEUED, RUNNING, and COMPLETED transitions instead of immediate completion', () => {

@@ -1,18 +1,12 @@
 import { useCallback, useEffect, useRef, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
 import {
   ArrowLeft,
-  Beaker,
-  Boxes,
   ChevronRight,
   CircleHelp,
   ClipboardCheck,
-  Database,
-  GitBranch,
   LayoutDashboard,
   ListTree,
-  PackageCheck,
   Search,
-  ShieldAlert,
   SlidersHorizontal,
   Sparkles,
   type LucideIcon
@@ -42,13 +36,7 @@ export interface NavigationItem {
 export const NAV_ITEMS: NavigationItem[] = [
   { path: '/overview', label: '治理总览', shortLabel: '总览', description: '质量、过程、性能与自进化漏斗', icon: LayoutDashboard },
   { path: '/cases', label: 'Case / Trace 分析', shortLabel: 'Case', description: '从线上任务定位 Trace、Evidence 与治理进度', icon: ListTree },
-  { path: '/evaluations', label: '评测中心', shortLabel: '评测', description: '独立管理过程评测、产物评测与人工修订', icon: ClipboardCheck },
-  { path: '/issues', label: '归因与问题簇', shortLabel: '归因', description: '多问题归因、分流与聚类优化', icon: ShieldAlert },
-  { path: '/variants', label: '能力变体', shortLabel: '变体', description: '管理候选能力版本及来源证据', icon: GitBranch },
-  { path: '/experiments', label: '实验与准出', shortLabel: '实验', description: '单变体、窗口组合实验与准出报告', icon: Beaker },
-  { path: '/releases', label: '发布版本', shortLabel: '发布', description: '发布、灰度、观察和回滚追踪', icon: PackageCheck },
-  { path: '/assets-skills', label: '资产与 Skill', shortLabel: '资产', description: 'Skill 版本、私库资产与进化记录', icon: Boxes },
-  { path: '/datasets', label: '数据集', shortLabel: '数据集', description: '归因集、泛化集、回归集与窗口数据快照', icon: Database },
+  { path: '/datasets-evaluations', label: '数据集与评测', shortLabel: '数据评测', description: '按 Skill 版本与归因管理数据集和评测历史', icon: ClipboardCheck },
   { path: '/rules', label: '规则配置', shortLabel: '规则', description: '触发门槛、实验次数与指标门禁', icon: SlidersHorizontal }
 ]
 
@@ -123,6 +111,7 @@ function GlobalFilterBar() {
   const { state, dispatch } = useQuality()
   const { state: evolutionState } = useEvolution()
   const filters = state.filters
+  const isDatasetEvaluationWorkbench = location.pathname === '/datasets-evaluations'
 
   const setFilter = useCallback(<K extends keyof FilterState>(key: K, value: FilterState[K]) => {
     dispatch({ type: 'SET_FILTERS', filters: { [key]: value } as Partial<FilterState> })
@@ -185,17 +174,17 @@ function GlobalFilterBar() {
             {ENVIRONMENTS.map((environment) => <option value={environment} key={environment}>{environment}</option>)}
           </select>
         </div>
-        <div className="filter-group">
+        {!isDatasetEvaluationWorkbench && <div className="filter-group">
           <label htmlFor="global-skill">全局 Skill</label>
           <select id="global-skill" value={filters.skill ?? ''} onChange={(event) => setFilter('skill', event.target.value || undefined)}>
             <option value="">全部 Skill</option>
             {evolutionState.skills.map((skill) => <option key={skill.id} value={skill.id}>{skill.name}</option>)}
           </select>
-        </div>
+        </div>}
         <form className="global-search" onSubmit={submitSearch} role="search">
           <Search size={16} aria-hidden="true" />
-          <label className="sr-only" htmlFor="global-search-input">搜索 task_id、query 或 trace_id</label>
-          <input id="global-search-input" value={filters.search} onChange={onSearchChange} placeholder="搜索 task_id / query / trace_id" />
+          <label className="sr-only" htmlFor="global-search-input">搜索 task_id、query、session_id、trace_id 或 skill_id</label>
+        <input id="global-search-input" value={filters.search} onChange={onSearchChange} placeholder="搜索 task_id / query / session_id / trace_id / skill_id" />
           {filters.search && <button type="button" className="icon-button icon-button--quiet" aria-label="清除搜索" onClick={() => setFilter('search', '')}>×</button>}
         </form>
       </div>
@@ -215,6 +204,8 @@ function Breadcrumbs() {
   const segments = location.pathname.split('/').filter(Boolean)
   const isDetail = segments.length > 1
   const detailLabel = isDetail ? segments[segments.length - 1] : undefined
+  const returnTo = new URLSearchParams(location.search).get('returnTo')
+  const validReturnTo = returnTo && /^\/(overview|cases|evaluations|datasets-evaluations|issues|variants|experiments|releases|assets-skills|datasets|rules)(\?|$)/.test(returnTo) ? returnTo : undefined
   const handleBack = () => {
     if (window.history.length > 1) navigate(-1)
     else navigate('/overview')
@@ -226,6 +217,7 @@ function Breadcrumbs() {
         <ArrowLeft size={15} aria-hidden="true" />
         <span>返回</span>
       </button>
+      {validReturnTo && <button type="button" className="back-button" onClick={() => navigate(validReturnTo)} aria-label="返回来源页面">返回来源</button>}
       <nav className="breadcrumbs" aria-label="面包屑导航">
         <Link to={{ pathname: '/overview', search: location.search }}>治理总览</Link>
         {current && current.path !== '/overview' && <><ChevronRight size={14} aria-hidden="true" /><Link to={{ pathname: current.path, search: location.search }}>{current.label}</Link></>}
@@ -313,10 +305,10 @@ export function DashboardLayout({ children }: { children?: ReactNode }) {
   // races with the state -> URL effect below and can overwrite a fresh user
   // selection with the previous URL for one render (or indefinitely).
   useEffect(() => {
-    const urlFilters = parseGlobalFilters(location.search, defaultFilters)
+    const urlFilters = parseGlobalFilters(location.search, defaultFilters, { includeSkill: location.pathname !== '/datasets-evaluations' })
     const currentGlobal = Object.fromEntries(GLOBAL_FILTER_KEYS.map((key) => [key, state.filters[key]])) as unknown as typeof urlFilters
     if (!filtersEqual(urlFilters, currentGlobal)) dispatch({ type: 'SET_FILTERS', filters: urlFilters })
-  }, [dispatch, location.search])
+  }, [dispatch, location.search, location.pathname])
 
   // Keep all known filter values serializable while preserving detail IDs and
   // page-specific query parameters owned by the route.
@@ -327,8 +319,9 @@ export function DashboardLayout({ children }: { children?: ReactNode }) {
     if (filtersEqual(previousFiltersRef.current, state.filters)) return
     previousFiltersRef.current = state.filters
     const current = new URLSearchParams(location.search)
-    const encoded = new URLSearchParams(serializeGlobalFilters(state.filters))
-    FILTER_KEYS.forEach((key) => current.delete(key))
+    const isWorkbench = location.pathname === '/datasets-evaluations'
+    const encoded = new URLSearchParams(serializeGlobalFilters(isWorkbench ? { ...state.filters, skill: undefined } : state.filters))
+    FILTER_KEYS.forEach((key) => { if (!isWorkbench || key !== 'skill') current.delete(key) })
     encoded.forEach((value, key) => current.set(key, value))
     const nextSearch = current.toString()
     if (nextSearch !== location.search.replace(/^\?/, '')) {

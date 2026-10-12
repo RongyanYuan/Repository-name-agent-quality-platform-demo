@@ -38,23 +38,22 @@ describe('Office Agent self-evolution app integration', () => {
     expect(Object.keys(REFERENCE_ROUTES).sort()).toEqual([...REFERENCE_KINDS, 'issue-cluster'].sort())
     expect(REFERENCE_ROUTES['issue-cluster']).toEqual(REFERENCE_ROUTES.cluster)
   })
-  it('renders the ten primary governance destinations and the new brand', () => {
+  it('renders the four primary governance destinations and the new brand', () => {
     clearEvolutionStorage()
     renderApp()
 
     expect(screen.getByText('Office Agent')).toBeVisible()
     expect(screen.getByText('自进化治理平台')).toBeVisible()
-    expect(within(screen.getByRole('navigation', { name: '主导航' })).getAllByRole('link')).toHaveLength(10)
+    expect(within(screen.getByRole('navigation', { name: '主导航' })).getAllByRole('link')).toHaveLength(4)
     const primaryNav = within(screen.getByRole('navigation', { name: '主导航' }))
     expect(primaryNav.getByRole('link', { name: '治理总览' })).toHaveAttribute('href', '/overview')
     expect(primaryNav.getByRole('link', { name: 'Case / Trace 分析' })).toHaveAttribute('href', '/cases')
-    expect(primaryNav.getByRole('link', { name: '评测中心' })).toHaveAttribute('href', '/evaluations')
-    expect(primaryNav.getByRole('link', { name: '归因与问题簇' })).toHaveAttribute('href', '/issues')
-    expect(primaryNav.getByRole('link', { name: '能力变体' })).toHaveAttribute('href', '/variants')
-    expect(primaryNav.getByRole('link', { name: '实验与准出' })).toHaveAttribute('href', '/experiments')
-    expect(primaryNav.getByRole('link', { name: '发布版本' })).toHaveAttribute('href', '/releases')
-    expect(primaryNav.getByRole('link', { name: '资产与 Skill' })).toHaveAttribute('href', '/assets-skills')
-    expect(primaryNav.getByRole('link', { name: '数据集' })).toHaveAttribute('href', '/datasets')
+    expect(primaryNav.getByRole('link', { name: '数据集与评测' })).toHaveAttribute('href', '/datasets-evaluations')
+    expect(primaryNav.queryByRole('link', { name: '归因与问题簇' })).not.toBeInTheDocument()
+    expect(primaryNav.queryByRole('link', { name: '能力变体' })).not.toBeInTheDocument()
+    expect(primaryNav.queryByRole('link', { name: '实验与准出' })).not.toBeInTheDocument()
+    expect(primaryNav.queryByRole('link', { name: '发布版本' })).not.toBeInTheDocument()
+    expect(primaryNav.queryByRole('link', { name: '资产与 Skill' })).not.toBeInTheDocument()
     expect(primaryNav.getByRole('link', { name: '规则配置' })).toHaveAttribute('href', '/rules')
     expect(screen.getAllByRole('heading', { name: '治理总览', level: 1 })).toHaveLength(2)
     expect(screen.getAllByText('Mock 演示数据').length).toBeGreaterThan(0)
@@ -62,16 +61,13 @@ describe('Office Agent self-evolution app integration', () => {
 
   it('routes a linked object ID to its owning page while preserving filters', async () => {
     clearEvolutionStorage()
-    renderApp('/evaluations?timeRange=14d&environment=Production')
-
-    expect(screen.getAllByRole('heading', { name: '评测中心', level: 1 })).toHaveLength(2)
-    fireEvent.click(screen.getAllByRole('button', { name: /case-ppt-management/ })[0])
+    renderApp('/evaluations?traceId=trace-ppt-generate&timeRange=14d&environment=Production')
 
     await waitFor(() => {
       expect(screen.getByTestId('location')).toHaveTextContent('/cases?')
       expect(screen.getByTestId('location')).toHaveTextContent('timeRange=14d')
       expect(screen.getByTestId('location')).toHaveTextContent('environment=Production')
-      expect(screen.getByTestId('location')).toHaveTextContent('caseId=case-ppt-management')
+      expect(screen.getByTestId('location')).toHaveTextContent('traceId=trace-ppt-generate')
     })
     expect(screen.getByRole('dialog', { name: /Case 详情 · case-ppt-management/ })).toBeVisible()
   })
@@ -89,12 +85,24 @@ describe('Office Agent self-evolution app integration', () => {
     expect(screen.queryByRole('link', { name: 'Task / Trace' })).not.toBeInTheDocument()
   })
 
+  it('opens legacy anomaly monitoring as an explicit overview monitoring view', async () => {
+    clearEvolutionStorage()
+    renderApp('/anomaly-monitoring?timeRange=7d&environment=Production')
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent('/overview?')
+      expect(screen.getByTestId('location')).toHaveTextContent('view=monitoring')
+      expect(screen.getByTestId('location')).toHaveTextContent('timeRange=7d')
+      expect(screen.getByTestId('location')).toHaveTextContent('environment=Production')
+    })
+    await waitFor(() => expect(screen.getByText(/线上监控视图/)).toBeVisible())
+  })
+
   it('maps legacy Benchmark comparison links to the experiment context', async () => {
     clearEvolutionStorage()
     renderApp('/benchmarks/benchmark-001/cases/case-ppt-management?timeRange=30d')
 
     await waitFor(() => {
-      expect(screen.getByTestId('location')).toHaveTextContent('/experiments?')
+      expect(screen.getByTestId('location')).toHaveTextContent('/datasets-evaluations?')
       expect(screen.getByTestId('location')).toHaveTextContent('experimentId=benchmark-001')
       expect(screen.getByTestId('location')).toHaveTextContent('caseId=case-ppt-management')
       expect(screen.getByTestId('location')).toHaveTextContent('comparison=true')
@@ -106,10 +114,11 @@ describe('Office Agent self-evolution app integration', () => {
     clearEvolutionStorage()
     renderApp('/variants?timeRange=14d&variantId=variant-ppt-routing-v3')
 
-    fireEvent.click(within(screen.getByRole('navigation', { name: '主导航' })).getByRole('link', { name: '发布版本' }))
+    fireEvent.click(within(screen.getByRole('navigation', { name: '主导航' })).getByRole('link', { name: '数据集与评测' }))
 
     await waitFor(() => {
-      expect(screen.getByTestId('location')).toHaveTextContent('/releases?timeRange=14d')
+      expect(screen.getByTestId('location')).toHaveTextContent('/datasets-evaluations?')
+      expect(screen.getByTestId('location')).toHaveTextContent('timeRange=14d')
       expect(screen.getByTestId('location')).not.toHaveTextContent('variantId=')
     })
   })
@@ -126,11 +135,11 @@ describe('Office Agent self-evolution app integration', () => {
   it('opens owning-page details from every object ID query parameter', async () => {
     clearEvolutionStorage()
     const { unmount } = renderApp('/variants?variantId=variant-ppt-routing-v3')
-    expect(await screen.findByRole('dialog', { name: '变体详情' })).toHaveTextContent('variant-ppt-routing-v3')
+    expect(await screen.findByRole('dialog', { name: /归因历史详情/ })).toHaveTextContent('exp-single-ppt-routing')
     unmount()
 
     renderApp('/experiments?experimentId=exp-single-ppt-routing')
-    expect(await screen.findByRole('dialog', { name: '实验详情' })).toHaveTextContent('exp-single-ppt-routing')
+    expect(await screen.findByRole('dialog', { name: /归因历史详情/ })).toHaveTextContent('exp-single-ppt-routing')
   })
 
   it('routes the Rule typed ID to its owning detail', async () => {
@@ -208,26 +217,21 @@ describe('Office Agent self-evolution app integration', () => {
     expect(await screen.findByText('跨重挂载人工复核记录')).toBeVisible()
   })
 
-  it('rehydrates a created Issue and appended Eval revision after provider remount', async () => {
+  it('keeps legacy evaluation and issue references visible after redirect', async () => {
     clearEvolutionStorage()
     const first = renderApp('/evaluations?evaluationId=process-eval-ppt-recall&timeRange=30d')
-    fireEvent.click(await screen.findByRole('button', { name: '新增人工修订' }))
-    fireEvent.change(screen.getByLabelText('修订说明'), { target: { value: '跨重挂载 Eval 修订' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存修订' }))
-    fireEvent.click(within(screen.getByRole('navigation', { name: '主导航' })).getByRole('link', { name: '归因与问题簇' }))
-    fireEvent.click(await screen.findByRole('button', { name: '新建问题' }))
-    fireEvent.change(screen.getByLabelText('问题标题'), { target: { value: '跨重挂载问题' } })
-    fireEvent.change(screen.getByLabelText('问题描述'), { target: { value: '验证 Issue 持久化' } })
-    fireEvent.click(screen.getByLabelText('evidence-ppt-recall'))
-    fireEvent.click(screen.getByLabelText('Agent 迭代'))
-    fireEvent.click(screen.getByRole('button', { name: '保存问题' }))
-    await waitFor(() => expect(localStorage.getItem('office-agent-evolution-governance:v1')).toContain('跨重挂载问题'))
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent('/cases?')
+      expect(screen.getByTestId('location')).toHaveTextContent('evaluationId=process-eval-ppt-recall')
+    })
+    expect(screen.getByRole('dialog', { name: /Case 详情 · case-ppt-management/ })).toBeVisible()
     first.unmount()
 
-    renderApp('/evaluations?evaluationId=process-eval-ppt-recall&timeRange=30d')
-    expect((await screen.findAllByText('跨重挂载 Eval 修订')).length).toBeGreaterThan(0)
-    fireEvent.click(within(screen.getByRole('navigation', { name: '主导航' })).getByRole('link', { name: '归因与问题簇' }))
-    expect(await screen.findByText('跨重挂载问题')).toBeVisible()
+    renderApp('/issues?issueId=issue-skill-recall&timeRange=30d')
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent('/datasets-evaluations?')
+      expect(screen.getByTestId('location')).toHaveTextContent('issueId=issue-skill-recall')
+    })
   })
 
   it('selects the exact non-primary Trace and Observation requested by URL', async () => {
@@ -285,18 +289,27 @@ describe('Office Agent self-evolution app integration', () => {
     renderApp('/cases?timeRange=30d')
     expect(screen.getByLabelText('全局 Skill')).toBeVisible()
     fireEvent.change(screen.getByLabelText('Skill 版本'), { target: { value: '2.6.0' } })
-    fireEvent.change(screen.getByLabelText('过程评测'), { target: { value: 'FAIL' } })
+    fireEvent.change(screen.getByLabelText('过程最终得分（0–2）'), { target: { value: '1-1.5' } })
     fireEvent.change(screen.getByLabelText('Log ID'), { target: { value: 'log-ppt-skill' } })
     await waitFor(() => {
       expect(screen.getByTestId('location')).toHaveTextContent('skillVersion=2.6.0')
-      expect(screen.getByTestId('location')).toHaveTextContent('processEval=FAIL')
+      expect(screen.getByTestId('location')).toHaveTextContent('processEval=1-1.5')
       expect(screen.getByTestId('location')).toHaveTextContent('logId=log-ppt-skill')
     })
   })
 
+  it('uses the single global search field to filter Case / Trace records', async () => {
+    clearEvolutionStorage()
+    renderApp('/cases?timeRange=30d&environment=Production&search=case-ppt-management')
+    await waitFor(() => expect(screen.getByRole('row', { name: /case-ppt-management/ })).toBeVisible())
+    expect(screen.getByRole('table', { name: 'Case / Trace 列表' })).not.toHaveTextContent('case-tool-export')
+    expect(screen.queryByLabelText('Query')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('搜索 task_id、query、session_id、trace_id 或 skill_id')).toBeVisible()
+  })
+
   it('retains repeated routing tags and local filters through navigation and remount', async () => {
     clearEvolutionStorage()
-    const entry = '/cases?timeRange=30d&skillVersion=2.6.0&processEval=FAIL&routingTag=%E7%AD%96%E7%95%A5%E8%BF%AD%E4%BB%A3&routingTag=Agent+%E8%BF%AD%E4%BB%A3'
+    const entry = '/cases?timeRange=30d&skillVersion=2.6.0&processEval=1-1.5&routingTag=%E7%AD%96%E7%95%A5%E8%BF%AD%E4%BB%A3&routingTag=Agent+%E8%BF%AD%E4%BB%A3'
     const first = renderApp(entry)
     await waitFor(() => expect(screen.getByLabelText('策略迭代')).toBeChecked())
     expect(screen.getByLabelText('Agent 迭代')).toBeChecked()
@@ -316,12 +329,12 @@ describe('Office Agent self-evolution app integration', () => {
 
   it('restores global, Case-local, repeated, and detail URL layers through sequential changes, breadcrumb, and Back', async () => {
     clearEvolutionStorage()
-    renderApp('/cases?timeRange=30d&agentVersion=agent-2.5.0&businessType=PPT&environment=Production&skill=skill-ppt-builder&skillVersion=2.6.0&processEval=FAIL&logId=log-ppt-skill&routingTag=%E7%AD%96%E7%95%A5%E8%BF%AD%E4%BB%A3&routingTag=Agent+%E8%BF%AD%E4%BB%A3&caseId=case-ppt-management')
+    renderApp('/cases?timeRange=30d&agentVersion=agent-2.5.0&businessType=PPT&environment=Production&skill=skill-ppt-builder&skillVersion=2.6.0&processEval=1-1.5&logId=log-ppt-skill&routingTag=%E7%AD%96%E7%95%A5%E8%BF%AD%E4%BB%A3&routingTag=Agent+%E8%BF%AD%E4%BB%A3&caseId=case-ppt-management')
     expect(await screen.findByRole('dialog', { name: /Case 详情 · case-ppt-management/ })).toBeVisible()
-    fireEvent.change(screen.getByLabelText('结果评测'), { target: { value: 'FAIL' } })
+    fireEvent.change(screen.getByLabelText('结果最终得分（0–2）'), { target: { value: '0.5-1' } })
     await waitFor(() => {
       const location = screen.getByTestId('location').textContent ?? ''
-      for (const token of ['caseId=case-ppt-management', 'timeRange=30d', 'agentVersion=agent-2.5.0', 'environment=Production', 'skillVersion=2.6.0', 'processEval=FAIL', 'outcomeEval=FAIL', 'logId=log-ppt-skill']) expect(location).toContain(token)
+      for (const token of ['caseId=case-ppt-management', 'timeRange=30d', 'agentVersion=agent-2.5.0', 'environment=Production', 'skillVersion=2.6.0', 'processEval=1-1.5', 'outcomeEval=0.5-1', 'logId=log-ppt-skill']) expect(location).toContain(token)
       expect((location.match(/routingTag=/g) ?? [])).toHaveLength(2)
     })
     fireEvent.click(within(screen.getByRole('navigation', { name: '面包屑导航' })).getByRole('link', { name: '治理总览' }))

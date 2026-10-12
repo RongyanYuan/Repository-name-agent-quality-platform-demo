@@ -7,6 +7,7 @@ import { buildCaseAnalysisData, buildCaseAnalysisDataFromEvolution } from './mod
 export type EvolutionCasesPageProps = Omit<CaseAnalysisWorkbenchProps, 'data'> & {
   data?: CaseAnalysisWorkbenchProps['data']
   evolutionState?: EvolutionState
+  detailEvolutionState?: EvolutionState
 }
 
 /**
@@ -14,10 +15,11 @@ export type EvolutionCasesPageProps = Omit<CaseAnalysisWorkbenchProps, 'data'> &
  * data later; until then the legacy quality fixture is adapted without
  * coupling this feature folder to App or layout code.
  */
-export function EvolutionCasesPage({ data, evolutionState, ...props }: EvolutionCasesPageProps) {
+export function EvolutionCasesPage({ data, evolutionState, detailEvolutionState, ...props }: EvolutionCasesPageProps) {
   const fallback = useMemo(() => buildCaseAnalysisData(qualityData), [])
   const normalized = useMemo(() => evolutionState ? buildCaseAnalysisDataFromEvolution(evolutionState) : undefined, [evolutionState])
-  return <CaseAnalysisWorkbench data={data ?? normalized ?? fallback} {...props} />
+  const detailData = useMemo(() => detailEvolutionState ? buildCaseAnalysisDataFromEvolution(detailEvolutionState) : undefined, [detailEvolutionState])
+  return <CaseAnalysisWorkbench data={data ?? normalized ?? fallback} detailData={detailData} {...props} />
 }
 
 export default EvolutionCasesPage

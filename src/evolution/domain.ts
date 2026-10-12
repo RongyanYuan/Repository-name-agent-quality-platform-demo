@@ -1,12 +1,59 @@
 export type Id = string
 export type ISODateTime = string
 export type EvolutionModule = 'Reason' | 'Memory' | 'Skill' | 'Act' | 'Context'
+
+/**
+ * The V2 attribution dictionary is intentionally kept as data rather than
+ * inferred from display text.  Historical V1 records can still carry their
+ * original `dimension` value through `legacyRawLabel`, while all new findings
+ * use this exact wording.
+ */
 export const ATTRIBUTION_DIMENSIONS: Record<EvolutionModule, readonly string[]> = {
+  Memory: ['生产错误', '管理错误', '召回率低', '准确率低'],
+  Skill: ['能力缺乏', 'skill文件不可用', 'skill sop错误', 'skill name/description错误', '品味库召回错误', '品味库资产质量', '品味库资产不足'],
+  Reason: ['没有充分响应用户query的客观诉求', '没有充分结合上文', '没有做出最正确/高效的选择', '调用工具所需参数是否正确'],
+  Act: ['工具未执行成功', '未遵循重试，超时等工程稳定性规则'],
+  Context: ['待上文的需求方案评审后补充']
+}
+
+/** V1 aliases are retained for migrations and existing screens only. */
+export const LEGACY_ATTRIBUTION_DIMENSIONS: Record<EvolutionModule, readonly string[]> = {
   Memory: ['生产错误', '管理错误', '召回率低', '准确率低'],
   Skill: ['能力缺乏', '文件不可用', 'SOP 错误', 'name/description 错误', '品味库召回错误', '资产质量', '资产不足'],
   Reason: ['未响应用户诉求', '未充分结合上文', '选择不正确或低效', '工具参数错误'],
   Act: ['工具执行失败', '未遵循重试或超时等稳定性规则'],
   Context: ['需求待补充']
+}
+export const ATTRIBUTION_TAXONOMY_VERSION = 'v2.0.0'
+
+export type SkillCategory = 'PRODUCTION_SKILL' | 'GENERAL' | 'PERSONAL_SKILL' | 'TASTE_SKILL' | 'UNCLASSIFIED'
+export type TraceChannel = '小程序' | 'genflow pc 端' | 'genflow 垂类入口'
+export type VerticalScenario = 'PPT' | 'Word' | 'Excel' | '生图'
+export type UserAcceptanceStatus = 'ACCEPTED' | 'REJECTED' | 'UNKNOWN'
+export type DatasetPurpose = '原始归因集' | '同类泛化集' | '相邻及无关回归集' | '窗口线上数据全集' | '泛化集合' | '黄金集'
+export interface EvolutionTarget {
+  skillId: Id
+  skillVersion?: string
+  skillVersionId?: string
+  /** PRD attribution dimension ID; not a pointer to an individual human label. */
+  attributionId?: string
+  /** Compatibility field for old persisted targets. */
+  evolutionItemId: string
+}
+export type EvaluationBatchStatus = 'DRAFT' | 'QUEUED' | 'RUNNING' | 'PARTIAL' | 'COMPLETED' | 'FAILED'
+export type EvaluationJobStatus = 'QUEUED' | 'RUNNING' | 'PARTIAL' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+export type ModuleEvaluationStatus = 'PASS' | 'FAIL' | 'DERIVED_FAIL' | 'UNKNOWN' | 'N/A'
+export type EvaluationCoverageStatus = 'COMPLETE' | 'PARTIAL' | 'MISSING' | 'N/A'
+export type TraceEvaluationModuleCode = 'REASON' | 'MEMORY' | 'CONTEXT' | 'SKILL' | 'ACT' | 'TOOL' | 'OUTCOME'
+export type V2RoutingLabel = '策略迭代' | 'Agent迭代'
+export type RoutingDecisionStatus = 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'DELIVERED'
+export type RoutingDeliveryStatus = 'PENDING' | 'QUEUED' | 'DELIVERED' | 'ACKNOWLEDGED' | 'REJECTED' | 'RESOLVED'
+export type RoutingDestination = 'ALGORITHM_BADCASE' | 'AGENT_ITERATION' | 'TASTE_LIBRARY' | 'PERSONAL_SKILL_PLANNING' | 'DIRECT_FIX' | 'ISSUE_CLUSTER'
+export type AlgorithmBadcaseStatus = 'CANDIDATE' | 'CONFIRMED' | 'REJECTED' | 'RESOLVED'
+export type BadcaseQueueKind = 'ALGORITHM' | 'AGENT' | 'TASTE' | 'PERSONAL_SKILL' | 'DIRECT_FIX'
+
+export const TRACE_MODULE_LABELS: Record<TraceEvaluationModuleCode, string> = {
+  REASON: 'Reason', MEMORY: '记忆', CONTEXT: '上文', SKILL: 'skill', ACT: 'Act', TOOL: 'Tool', OUTCOME: 'Outcome/产物'
 }
 export type EvaluationVerdict = 'PASS' | 'FAIL' | 'UNKNOWN' | 'NOT_APPLICABLE'
 export type EvaluationSource = 'AUTOMATIC' | 'HUMAN'
@@ -33,6 +80,7 @@ export interface InterceptionSignal { blocked: boolean; reason: string; category
 export interface TraceTelemetry {
   totalLatencyMs: number; ttftMs: number; inputTokens: number; outputTokens: number; cacheHitCount: number; cacheRequestCount: number
   modelCallCount: number; toolCallCount: number; toolOneShotSuccessCount: number; toolExecutionCount: number; loopCount: number; retryCount: number
+  modelLatencyMs?: number; modelThroughputTokensPerSecond?: number; inputCostDeviationRate?: number; outputCostDeviationRate?: number
   riskInterception: InterceptionSignal; commercialInterception: InterceptionSignal
 }
 
@@ -54,9 +102,14 @@ export interface Case extends EntityBase {
   resultStatus: EvaluationVerdict
   processStatus: EvaluationVerdict
   feedback?: string
+  /** Explicit Mock/user event label; never inferred from free-text feedback. */
+  acceptanceStatus?: UserAcceptanceStatus
   owner?: string
   labels: string[]
   multiScenario: boolean
+  sourceType?: 'ONLINE_WINDOW' | 'GOLDEN_DATASET' | 'MOCK_SET'
+  channel?: TraceChannel
+  verticalScenario?: VerticalScenario
 }
 
 export interface Trace extends EntityBase {
@@ -71,6 +124,13 @@ export interface Trace extends EntityBase {
   totalLatencyMs: number
   inputTokens: number
   outputTokens: number
+  /** V2 ledger fields; omitted on legacy V1 traces and filled by migration. */
+  agentVersion?: string
+  skillVersion?: string
+  skillCategory?: SkillCategory
+  channel?: TraceChannel
+  verticalScenario?: VerticalScenario
+  queryAt?: ISODateTime
   telemetry: TraceTelemetry
 }
 
@@ -148,6 +208,231 @@ export interface Attribution extends EntityBase {
   caseId: Id; traceId: Id; observationId?: Id; module: EvolutionModule; dimension: string; evidenceIds: Id[]
   confidence: number; source: EvaluationSource; confirmed: boolean; routingLabels: RoutingLabel[]
   optimizationMode: OptimizationMode; status: 'PENDING' | 'CONFIRMED' | 'REJECTED'; revisions: AttributionRevision[]
+  moduleCode?: string; dimensionCode?: string; dimensionLabel?: string; description?: string; optimizationDimension?: string; selectedOptimizationCondition?: string; taxonomyVersion?: string; labelSnapshot?: string; legacyRawLabel?: string
+}
+
+export type EvidenceCompleteness = 'COMPLETE' | 'PARTIAL' | 'MISSING'
+export type TraceEvaluationPackageStatus = 'PENDING' | 'EVALUATED' | 'PARTIAL' | 'FAILED'
+
+export interface EvaluationEvidenceBundle {
+  rootEvidenceIds: Id[]
+  rubricRule: string
+  observationIds: Id[]
+  logIds: Id[]
+  artifactIds: Id[]
+  inputSummary?: string
+  outputSummary?: string
+  firstFailure: boolean
+  derivedFailure: boolean
+  derivedFromModule?: TraceEvaluationModuleCode
+  completeness: EvidenceCompleteness
+}
+
+export interface ModuleEvaluationScore extends EntityBase {
+  packageId: Id
+  traceId: Id
+  caseId: Id
+  moduleCode: TraceEvaluationModuleCode
+  moduleLabel: string
+  automaticStatus: ModuleEvaluationStatus
+  humanStatus?: ModuleEvaluationStatus
+  humanScore?: number
+  score?: number
+  judgeReason: string
+  evalAgentVersion: string
+  rubricVersion: string
+  evidence: EvaluationEvidenceBundle
+  humanNote?: string
+  humanUpdatedAt?: ISODateTime
+  humanUpdatedBy?: string
+}
+
+export interface EvaluationBatchStats {
+  inputTraceCount: number
+  successCount: number
+  partialCount: number
+  failedCount: number
+  pendingCount: number
+}
+
+export interface EvaluationBatch extends EntityBase {
+  name: string
+  status: EvaluationBatchStatus
+  traceIds: Id[]
+  packageIds: Id[]
+  jobIds: Id[]
+  evalAgentVersion: string
+  rubricVersion: string
+  runEnvironment: string
+  createdBy: string
+  stats: EvaluationBatchStats
+  errorReason?: string
+  startedAt?: ISODateTime
+  completedAt?: ISODateTime
+}
+
+export interface EvaluationJob extends EntityBase {
+  batchId: Id
+  attempt: number
+  status: EvaluationJobStatus
+  traceIds: Id[]
+  processedTraceIds: Id[]
+  failedTraceIds: Id[]
+  evalAgentVersion: string
+  rubricVersion: string
+  runEnvironment: string
+  configurationSnapshot: Record<string, unknown>
+  errorReason?: string
+  queuedAt?: ISODateTime
+  startedAt?: ISODateTime
+  completedAt?: ISODateTime
+}
+
+export interface TraceEvaluationPackage extends EntityBase {
+  batchId: Id
+  caseId: Id
+  sessionId: Id
+  traceId: Id
+  query: string
+  agentVersion: string
+  skillVersion?: string
+  skillIds: Id[]
+  skillCategory: SkillCategory
+  processCoverage: EvaluationCoverageStatus
+  outcomeCoverage: EvaluationCoverageStatus
+  status: TraceEvaluationPackageStatus
+  moduleScores: ModuleEvaluationScore[]
+  findingIds: Id[]
+  routingDecisionIds: Id[]
+  routingDeliveryIds: Id[]
+  badcaseIds: Id[]
+  owner?: string
+  revaluationJobIds: Id[]
+  rating?: TraceRating
+}
+
+/** Versioned 0–2 display contract; legacy 0–1 evaluations remain immutable. */
+export interface TraceRating {
+  scale: '0-2'
+  rubric: string
+  processFinal?: number
+  outcomeFinal?: number
+  processDimensions: Array<{ module: TraceEvaluationModuleCode; dimension: string; score?: number; scoreId?: Id }>
+  outcomeDimensions: Array<{ dimension: string; score?: number; evaluationId?: Id }>
+}
+
+export interface EvaluationFinding extends EntityBase {
+  packageId: Id
+  batchId: Id
+  caseId: Id
+  sessionId: Id
+  traceId: Id
+  moduleCode: TraceEvaluationModuleCode
+  moduleLabel: string
+  dimensionCode: string
+  dimensionLabel: string
+  description: string
+  optimizationDimension?: string
+  selectedOptimizationCondition?: string
+  taxonomyVersion: string
+  labelSnapshot: string
+  legacyRawLabel?: string
+  skillCategory: SkillCategory
+  /** Structured Eval Agent scenario returned with the finding. */
+  scenarioCode?: string
+  scenarioLabel?: string
+  optimizationPath?: string
+  preferenceSignalId?: Id
+  score?: number
+  status: 'OPEN' | 'CONFIRMED' | 'REJECTED' | 'RESOLVED'
+  firstFailure: boolean
+  derivedFailure: boolean
+  evidenceBundle: EvaluationEvidenceBundle
+  routingDecisionIds: Id[]
+  routingDeliveryIds: Id[]
+}
+
+export interface RoutingPolicy extends EntityBase {
+  name: string
+  version: string
+  enabled: boolean
+  description: string
+  skillCategories?: SkillCategory[]
+  moduleCodes?: TraceEvaluationModuleCode[]
+  outputLabel: V2RoutingLabel
+  destination: RoutingDestination
+  priority: number
+}
+
+export interface RoutingDecision extends EntityBase {
+  findingId: Id
+  packageId: Id
+  traceId: Id
+  policyId: Id
+  label: V2RoutingLabel
+  destination: RoutingDestination
+  status: RoutingDecisionStatus
+  reason: string
+  confirmedBy?: string
+  confirmedAt?: ISODateTime
+  deliveryIds: Id[]
+}
+
+export interface RoutingDelivery extends EntityBase {
+  findingId: Id
+  decisionId: Id
+  packageId: Id
+  caseId: Id
+  traceId: Id
+  label: V2RoutingLabel
+  destination: RoutingDestination
+  status: RoutingDeliveryStatus
+  queueId?: Id
+  owner?: string
+  note?: string
+  algorithmBadcaseId?: Id
+  issueId?: Id
+  issueClusterId?: Id
+  variantId?: Id
+  regressionDatasetId?: Id
+  deliveredAt?: ISODateTime
+  acknowledgedAt?: ISODateTime
+}
+
+export interface AlgorithmBadcaseItem extends EntityBase {
+  findingId: Id
+  packageId: Id
+  traceId: Id
+  deliveryId: Id
+  queueId: Id
+  status: AlgorithmBadcaseStatus
+  title: string
+  owner?: string
+  note?: string
+  regressionDatasetId?: Id
+  confirmedBy?: string
+  confirmedAt?: ISODateTime
+  sourceEvidenceIds: Id[]
+  issueId?: Id
+  issueClusterId?: Id
+  variantId?: Id
+}
+
+export interface BadcaseQueue extends EntityBase {
+  name: string
+  kind: BadcaseQueueKind
+  itemIds: Id[]
+  deliveryIds: Id[]
+  owner?: string
+  description: string
+}
+
+export interface PersonalSkillPlanningSource {
+  query?: string
+  assetIds: Id[]
+  existingSkillIds: Id[]
+  conversationTraceIds: Id[]
+  artifactIds: Id[]
 }
 
 export interface Issue extends EntityBase {
@@ -174,9 +459,56 @@ export interface TasteLibraryPopulationSnapshot {
   countedAt: ISODateTime
 }
 
+/**
+ * Aggregate preference evidence used by Taste Skill self-evolution.
+ * This is intentionally separate from the 100 related-case taste-library
+ * trigger so the user cohort denominator is never mixed with Case counts.
+ */
+export interface TastePreferenceSignal extends EntityBase {
+  skillId: Id
+  windowId?: Id
+  source: 'ONLINE_WINDOW' | 'MOCK_SET' | 'GOLDEN_DATASET'
+  populationTotal: number
+  preferenceCount: number
+  preferenceValue: string
+  preferenceRate: number
+  feedbackCount?: number
+  caseIds: Id[]
+  evidenceIds: Id[]
+  judgeReason: string
+  routingLabel: 'Agent迭代'
+  optimizationPath: string
+  relatedDataCount: number
+  relatedDataThreshold: number
+  /** Generated feedback records, not 1000 fully expanded execution traces. */
+  samples?: Array<{ userId: Id; preference: string }>
+  clusterId?: Id
+}
+
+export interface SkillEvolutionHistoryEntry extends EntityBase {
+  stage: '线上问题' | '评测完成' | '归因确认' | '问题簇' | '能力变体' | '单变体实验' | '窗口组合实验' | '准出决策' | '发布版本'
+  version: string
+  summary: string
+  referenceId?: Id
+  referenceKind?: string
+  status?: string
+}
+
+export interface SkillVersionInfo extends EntityBase {
+  version: string
+  status: 'RELEASED' | 'CANDIDATE' | 'DEPRECATED' | 'PLANNED'
+  description: string
+}
+
 export interface Skill extends EntityBase {
   name: string; type: 'OFFICIAL' | 'PERSONAL' | 'SYSTEM'; version: string; visibility: 'PRIVATE' | 'PUBLIC'
   evolutionRecordIds: Id[]; assetIds: Id[]; generationStatus: 'AVAILABLE' | 'PLANNED' | 'NOT_APPLICABLE'
+  category?: SkillCategory
+  /** Skill versions only; Agent release versions never belong to this catalog. */
+  versions?: SkillVersionInfo[]
+  description?: string
+  planningSources?: PersonalSkillPlanningSource[]
+  evolutionHistory?: SkillEvolutionHistoryEntry[]
 }
 
 export interface Asset extends EntityBase {
@@ -192,12 +524,19 @@ export interface Variant extends EntityBase {
   sourceCaseIds: Id[]; sourceIssueIds: Id[]; sourceClusterIds: Id[]; evidenceIds: Id[]
   status: 'DRAFT' | 'READY' | 'EXPERIMENTING' | 'SINGLE_PASSED' | 'WINDOW_VALIDATED' | 'RELEASED' | 'REJECTED'
   experimentIds: Id[]
+  targets?: EvolutionTarget[]
 }
 
 export interface Dataset extends EntityBase {
   name: string; type: 'ATTRIBUTION' | 'GENERALIZATION' | 'REGRESSION' | 'WINDOW_ONLINE'; version: string
   caseIds: Id[]; sampleCount: number; source: string; timeRange?: { from: ISODateTime; to: ISODateTime }
   scope: string; frozen: boolean; population: DatasetPopulation
+  purpose?: DatasetPurpose
+  targets?: EvolutionTarget[]
+  setRole?: 'EVALUATION' | 'GATE' | 'GOLDEN'
+  targetClassification?: 'EVOLUTION' | 'NON_EVOLUTION'
+  windowIds?: Id[]
+  gateStatus?: '已准出' | '待决策' | '不准出' | '人工复核' | '待配置'
 }
 
 export interface DatasetPopulation {
@@ -211,9 +550,27 @@ export interface ExperimentMetric {
 }
 export type GateDecisionBasis = 'CONFIGURED_THRESHOLD' | 'HUMAN_REVIEW'
 
+export interface ExperimentEvaluationSnapshot {
+  capturedAt: ISODateTime
+  evalAgentVersion?: string; rubricVersion?: string
+  artifactIds: Id[]; evidenceBundleIds: Id[]; tracePackageIds: Id[]
+  moduleEvaluations: ModuleEvaluationScore[]
+  tracePackages: Array<Pick<TraceEvaluationPackage, 'id' | 'batchId' | 'caseId' | 'sessionId' | 'traceId' | 'query' | 'agentVersion' | 'skillVersion' | 'skillCategory'>>
+  artifacts: Artifact[]; rootEvidence: Evidence[]; observations: ObservationLog[]
+  processEvals: ProcessEval[]; outcomeEvals: OutcomeEval[]
+}
+
+export interface ExperimentWindowSnapshot {
+  windowId: Id; candidateVariantIds: Id[]; cutoffAt?: ISODateTime; frozenAt?: ISODateTime
+  nextWindowRule?: string; nextWindowRuleId?: Id; nextWindowId?: Id
+}
+
 export interface ExperimentConfigSnapshot {
-  datasetVersions: Array<{ datasetId: Id; version: string; versionId: Id; sampleCount: number }>; model: string
+  datasetVersions: Array<{ datasetId: Id; version: string; versionId: Id; sampleCount: number; caseIds?: Id[] }>; model: string
   toolPermissions: string[]; timeoutMs: number; repeatCount: number; runEnvironment: string; createdAt: ISODateTime
+  evalAgentVersion?: string; rubricVersion?: string; artifactIds?: Id[]; evidenceBundleIds?: Id[]; tracePackageIds?: Id[]
+  evaluationSnapshot?: ExperimentEvaluationSnapshot
+  windowSnapshot?: ExperimentWindowSnapshot
 }
 
 export interface Experiment extends EntityBase {
@@ -221,18 +578,29 @@ export interface Experiment extends EntityBase {
   configSnapshot: ExperimentConfigSnapshot; runIds: Id[]; baselineVersion: string; candidateVersion: string
   metrics: ExperimentMetric[]; failedCaseIds: Id[]; rollbackItems: string[]; knownRisks: string[]
   status: 'DRAFT' | 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'DECIDED'; gateDecisionId?: Id
+  targets?: EvolutionTarget[]
 }
 
 export interface ExperimentRun extends EntityBase {
   experimentId: Id; caseId: Id; repetition: number; arm: 'BASELINE' | 'CANDIDATE'
   status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED'; processScore?: number; outcomeScore?: number
   durationMs: number; error?: string; configHash: string
+  /** Immutable experiment setup captured when this run is created. */
+  configSnapshot?: Omit<ExperimentConfigSnapshot, 'evaluationSnapshot'>
+  /** Narrow lookup-friendly copy retained on every run for report/lineage views. */
+  evalSnapshot?: ExperimentEvaluationSnapshot
+  windowSnapshot?: ExperimentWindowSnapshot
 }
 
 export interface Window extends EntityBase {
   name: string; timeRange: { from: ISODateTime; to: ISODateTime }; candidateVariantIds: Id[]
   singleExperimentIds: Id[]; combinationExperimentId?: Id
   status: 'COLLECTING' | 'READY' | 'EXPERIMENTING' | 'DECIDED' | 'RELEASED'
+  cutoffAt?: ISODateTime
+  frozenAt?: ISODateTime
+  nextWindowRuleId?: Id
+  nextWindowRule?: string
+  nextWindowId?: Id
 }
 
 export interface GateReportSnapshot {
@@ -268,8 +636,21 @@ export interface EvolutionState {
   issues: Issue[]; issueClusters: IssueCluster[]; skills: Skill[]; assets: Asset[]; variants: Variant[]
   datasets: Dataset[]; experiments: Experiment[]; experimentRuns: ExperimentRun[]; windows: Window[]
   gateDecisions: GateDecision[]; releases: ReleaseVersion[]; rules: RuleConfig[]; auditTrail: AuditEvent[]
+  /** V2 evaluation ledger and routing entities. */
+  evaluationBatches: EvaluationBatch[]
+  evaluationJobs: EvaluationJob[]
+  tracePackages: TraceEvaluationPackage[]
+  evaluationFindings: EvaluationFinding[]
+  routingPolicies: RoutingPolicy[]
+  routingDecisions: RoutingDecision[]
+  routingDeliveries: RoutingDelivery[]
+  algorithmBadcases: AlgorithmBadcaseItem[]
+  badcaseQueues: BadcaseQueue[]
+  tastePreferenceSignals: TastePreferenceSignal[]
 }
 
 export type EvolutionEntity = Session | Case | Trace | ObservationLog | Evidence | Artifact | ProcessEval | OutcomeEval
   | Attribution | Issue | IssueCluster | Skill | Asset | Variant | Dataset | Experiment | ExperimentRun
-  | Window | GateDecision | ReleaseVersion | RuleConfig
+  | Window | GateDecision | ReleaseVersion | RuleConfig | EvaluationBatch | EvaluationJob | TraceEvaluationPackage
+  | EvaluationFinding | RoutingPolicy | RoutingDecision | RoutingDelivery | AlgorithmBadcaseItem | BadcaseQueue
+  | TastePreferenceSignal

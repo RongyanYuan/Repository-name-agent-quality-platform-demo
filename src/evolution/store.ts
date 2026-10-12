@@ -1,6 +1,6 @@
 import { createContext, createElement, useContext, useEffect, useMemo, useReducer, type Dispatch, type PropsWithChildren } from 'react'
 import { createInitialEvolutionData } from './data'
-import type { Asset, Attribution, AttributionRevision, AuditEvent, Case, Dataset, EvaluationRevision, EvolutionState, Experiment, ExperimentMetric, ExperimentRun, GateDecision, Issue, IssueCluster, ReleaseVersion, RuleConfig, Skill, Variant } from './domain'
+import { TRACE_MODULE_LABELS, type AlgorithmBadcaseItem, type Asset, type Attribution, type AttributionRevision, type AuditEvent, type BadcaseQueue, type Case, type Dataset, type EvaluationBatch, type EvaluationEvidenceBundle, type EvaluationFinding, type EvaluationJob, type EvaluationRevision, type Evidence, type EvolutionState, type Experiment, type ExperimentConfigSnapshot, type ExperimentMetric, type ExperimentRun, type GateDecision, type Issue, type IssueCluster, type ModuleEvaluationScore, type ReleaseVersion, type RoutingDecision, type RoutingDelivery, type RuleConfig, type Skill, type TraceEvaluationModuleCode, type TraceEvaluationPackage, type Variant, type Window } from './domain'
 import { createLocalEvolutionRepository, type EvolutionRepository } from './repository'
 import { selectTasteLibraryTrigger } from './data/selectors'
 
@@ -30,9 +30,114 @@ export type EvolutionAction =
   | { type: 'UPDATE_DATASET_VERSION'; datasetId: string; patch: Partial<Pick<Dataset, 'name' | 'scope' | 'source' | 'timeRange' | 'population'>>; meta: EvolutionActionMeta }
   | { type: 'SET_DATASET_MEMBERS'; datasetId: string; caseIds: string[]; meta: EvolutionActionMeta }
   | { type: 'FREEZE_DATASET_VERSION'; datasetId: string; meta: EvolutionActionMeta }
+  | { type: 'CREATE_EVALUATION_BATCH'; batch: EvaluationBatch; meta: EvolutionActionMeta }
+  | { type: 'QUEUE_EVALUATION_JOB'; job: EvaluationJob; meta: EvolutionActionMeta }
+  | { type: 'START_EVALUATION_JOB'; jobId: string; meta: EvolutionActionMeta }
+  | { type: 'COMPLETE_EVALUATION_JOB'; jobId: string; meta: EvolutionActionMeta }
+  | { type: 'FAIL_EVALUATION_JOB'; jobId: string; error: string; meta: EvolutionActionMeta }
+  | { type: 'RETRY_EVALUATION_JOB'; jobId: string; meta: EvolutionActionMeta }
+  | { type: 'UPDATE_MODULE_EVALUATION'; packageId: string; scoreId: string; patch: Partial<ModuleEvaluationScore>; meta: EvolutionActionMeta }
+  | { type: 'UPDATE_EVALUATION_FINDING'; findingId: string; patch: Partial<EvaluationFinding>; meta: EvolutionActionMeta }
+  | { type: 'UPDATE_ROUTING_DECISION'; decisionId: string; patch: Partial<RoutingDecision>; meta: EvolutionActionMeta }
+  | { type: 'UPDATE_ROUTING_DELIVERY'; deliveryId: string; patch: Partial<RoutingDelivery>; meta: EvolutionActionMeta }
+  | { type: 'UPDATE_ALGORITHM_BADCASE'; badcaseId: string; patch: Partial<AlgorithmBadcaseItem>; meta: EvolutionActionMeta }
   | { type: 'RESET'; state: EvolutionState }
 
 const addUnique = (values: string[], value: string) => values.includes(value) ? values : [...values, value]
+const traceModuleCodes = Object.keys(TRACE_MODULE_LABELS) as TraceEvaluationModuleCode[]
+const batchPackageId = (batchId: string, traceId: string) => `package-${batchId}-${traceId}`
+const unknownEvidence = (): EvaluationEvidenceBundle => ({ rootEvidenceIds: [], rubricRule: '待评测：无可复用的同 Trace Rubric 结果', observationIds: [], logIds: [], artifactIds: [], firstFailure: false, derivedFailure: false, completeness: 'MISSING' })
+const unknownModuleScores = (packageId: string, traceId: string, caseId: string, job: Pick<EvaluationJob, 'evalAgentVersion' | 'rubricVersion'>, at: string): ModuleEvaluationScore[] => traceModuleCodes.map((moduleCode) => ({
+  id: `module-score-${packageId}-${moduleCode.toLowerCase()}`, packageId, traceId, caseId, moduleCode, moduleLabel: TRACE_MODULE_LABELS[moduleCode],
+  automaticStatus: 'UNKNOWN', judgeReason: '本地 Mock 无同 Trace 评测模板；未执行真实 Eval Agent，不能推断 PASS。',
+  evalAgentVersion: job.evalAgentVersion, rubricVersion: job.rubricVersion, evidence: unknownEvidence(), createdAt: at, updatedAt: at
+}))
+const batchCounts = (traceIds: string[], packages: TraceEvaluationPackage[]): EvaluationBatch['stats'] => {
+  const byTrace = new Map(packages.map((pkg) => [pkg.traceId, pkg.status]))
+  const counts = { inputTraceCount: traceIds.length, successCount: 0, partialCount: 0, failedCount: 0, pendingCount: 0 }
+  traceIds.forEach((traceId) => {
+    const status = byTrace.get(traceId)
+    if (status === 'EVALUATED') counts.successCount += 1
+    else if (status === 'PARTIAL') counts.partialCount += 1
+    else if (status === 'FAILED') counts.failedCount += 1
+    else counts.pendingCount += 1
+  })
+  return counts
+}
+const pendingPackage = (state: EvolutionState, batch: EvaluationBatch, traceId: string, at: string): TraceEvaluationPackage => {
+  const trace = state.traces.find((item) => item.id === traceId)!
+  const sourceCase = state.cases.find((item) => item.id === trace.caseId)
+  const packageId = batchPackageId(batch.id, traceId)
+  return {
+    id: packageId, batchId: batch.id, caseId: trace.caseId, sessionId: trace.sessionId, traceId, query: sourceCase?.query ?? '',
+    agentVersion: trace.agentVersion ?? sourceCase?.agentVersion ?? 'unknown', skillVersion: trace.skillVersion,
+    skillIds: sourceCase?.skillIds ?? [], skillCategory: trace.skillCategory ?? 'UNCLASSIFIED', processCoverage: 'MISSING', outcomeCoverage: 'MISSING',
+    status: 'PENDING', moduleScores: unknownModuleScores(packageId, traceId, trace.caseId, batch, at),
+    findingIds: [], routingDecisionIds: [], routingDeliveryIds: [], badcaseIds: [], owner: sourceCase?.owner,
+    revaluationJobIds: [], createdAt: at, updatedAt: at
+  }
+}
+interface MaterializedTrace {
+  packageRecord: TraceEvaluationPackage
+  findings: EvaluationFinding[]
+  decisions: RoutingDecision[]
+  deliveries: RoutingDelivery[]
+  badcases: AlgorithmBadcaseItem[]
+}
+/** Deterministic local replay only: a same-Trace seed package is the Mock provider.
+ * Missing templates never become successful evaluations. */
+const materializeTrace = (state: EvolutionState, batch: EvaluationBatch, job: EvaluationJob, traceId: string, at: string): MaterializedTrace => {
+  const packageId = batchPackageId(batch.id, traceId)
+  const existing = state.tracePackages.find((item) => item.id === packageId) ?? pendingPackage(state, batch, traceId, at)
+  const template = state.tracePackages.find((item) => item.id === `package-${traceId}` && ['EVALUATED', 'PARTIAL'].includes(item.status))
+    ?? state.tracePackages.find((item) => item.batchId !== batch.id && item.traceId === traceId && ['EVALUATED', 'PARTIAL'].includes(item.status))
+  if (!template) {
+    return { packageRecord: { ...existing, status: 'PARTIAL', processCoverage: 'MISSING', outcomeCoverage: 'MISSING', moduleScores: existing.moduleScores.length ? existing.moduleScores : unknownModuleScores(packageId, traceId, existing.caseId, job, at), revaluationJobIds: addUnique(existing.revaluationJobIds, job.id), updatedAt: at }, findings: [], decisions: [], deliveries: [], badcases: [] }
+  }
+  const scores = template.moduleScores.map((score): ModuleEvaluationScore => {
+    const oldHuman = existing.moduleScores.find((item) => item.moduleCode === score.moduleCode)
+    return {
+      ...score, id: `module-score-${packageId}-${score.moduleCode.toLowerCase()}`, packageId,
+      evidence: structuredClone(score.evidence),
+      evalAgentVersion: job.evalAgentVersion, rubricVersion: job.rubricVersion,
+      judgeReason: `${score.judgeReason}（本地 Mock 复用 ${template.id} 的同 Trace 结果；非实时 ${job.evalAgentVersion} 运行。）`,
+      humanStatus: oldHuman?.humanStatus, humanScore: oldHuman?.humanScore, humanNote: oldHuman?.humanNote,
+      humanUpdatedAt: oldHuman?.humanUpdatedAt, humanUpdatedBy: oldHuman?.humanUpdatedBy,
+      createdAt: at, updatedAt: at
+    }
+  })
+  const findings: EvaluationFinding[] = []
+  const decisions: RoutingDecision[] = []
+  const deliveries: RoutingDelivery[] = []
+  const badcases: AlgorithmBadcaseItem[] = []
+  for (const sourceFinding of state.evaluationFindings.filter((item) => item.packageId === template.id)) {
+    const findingId = `finding-${packageId}-${sourceFinding.moduleCode.toLowerCase()}`
+    const finding: EvaluationFinding = { ...sourceFinding, id: findingId, packageId, batchId: batch.id, status: 'OPEN', routingDecisionIds: [], routingDeliveryIds: [], evidenceBundle: structuredClone(sourceFinding.evidenceBundle), createdAt: at, updatedAt: at }
+    findings.push(finding)
+    for (const sourceDecision of state.routingDecisions.filter((item) => sourceFinding.routingDecisionIds.includes(item.id))) {
+      const decisionId = `routing-decision-${packageId}-${sourceDecision.id}`
+      const decision: RoutingDecision = { ...sourceDecision, id: decisionId, findingId, packageId, status: 'PENDING', confirmedBy: undefined, confirmedAt: undefined, deliveryIds: [], createdAt: at, updatedAt: at }
+      decisions.push(decision)
+      finding.routingDecisionIds.push(decisionId)
+      for (const sourceDelivery of state.routingDeliveries.filter((item) => sourceDecision.deliveryIds.includes(item.id))) {
+        const deliveryId = `routing-delivery-${packageId}-${sourceDelivery.id}`
+        const delivery: RoutingDelivery = { ...sourceDelivery, id: deliveryId, findingId, decisionId, packageId, status: 'PENDING', owner: undefined, note: sourceDelivery.destination === 'PERSONAL_SKILL_PLANNING' ? '二期规划入口，不调用生成服务。' : undefined, algorithmBadcaseId: undefined, issueId: undefined, issueClusterId: undefined, variantId: undefined, deliveredAt: undefined, acknowledgedAt: undefined, createdAt: at, updatedAt: at }
+        deliveries.push(delivery)
+        decision.deliveryIds.push(deliveryId)
+        finding.routingDeliveryIds.push(deliveryId)
+        if (sourceDelivery.destination === 'ALGORITHM_BADCASE' && sourceDelivery.queueId) {
+          const badcaseId = `badcase-${deliveryId}`
+          badcases.push({ id: badcaseId, findingId, packageId, traceId, deliveryId, queueId: sourceDelivery.queueId, status: 'CANDIDATE', title: `${traceId} · ${finding.moduleLabel} 算法 Badcase`, note: 'Mock 自动评测产生，待人工确认。', sourceEvidenceIds: [...finding.evidenceBundle.rootEvidenceIds], createdAt: at, updatedAt: at })
+          delivery.algorithmBadcaseId = badcaseId
+        }
+      }
+    }
+  }
+  return {
+    packageRecord: { ...existing, status: template.status, processCoverage: template.processCoverage, outcomeCoverage: template.outcomeCoverage, moduleScores: scores, findingIds: findings.map((item) => item.id), routingDecisionIds: decisions.map((item) => item.id), routingDeliveryIds: deliveries.map((item) => item.id), badcaseIds: badcases.map((item) => item.id), revaluationJobIds: addUnique(existing.revaluationJobIds, job.id), updatedAt: at },
+    findings, decisions, deliveries, badcases
+  }
+}
 const eventFor = (action: Exclude<EvolutionAction, { type: 'RESET' }>, entityType: string, entityId: string, changes?: Record<string, unknown>): AuditEvent => {
   const at = action.meta.at ?? new Date().toISOString()
   return { id: action.meta.auditId ?? `audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, at, actor: action.meta.actor, action: action.type, entityType, entityId, reason: action.meta.reason, changes }
@@ -54,7 +159,68 @@ const experimentMetrics = (runs: ExperimentRun[]): ExperimentMetric[] => {
     { key: 'generalization', label: '泛化集通过率', category: 'GENERALIZATION', baselineMean: mean(baseline), candidateMean: mean(candidate), baselineStdDev: stdDev(baseline), candidateStdDev: stdDev(candidate), unit: 'rate', gateStatus: 'PENDING' }
   ]
 }
-const normalizeDatasetSnapshot = (snapshot: Experiment['configSnapshot']): Experiment['configSnapshot'] => ({ ...snapshot, datasetVersions: snapshot.datasetVersions.map((entry) => ({ ...entry, versionId: `${entry.datasetId}@${entry.version}` })) })
+const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
+
+/**
+ * Freeze all inputs that can affect an experiment report at creation time.
+ * Dataset case membership is copied instead of being looked up again when a
+ * run starts; evaluation IDs are similarly copied from the current package
+ * graph so later re-evaluation cannot rewrite an historical run.
+ */
+const buildEvaluationSnapshot = (state: EvolutionState, config: ExperimentConfigSnapshot, capturedAt: string): NonNullable<ExperimentRun['evalSnapshot']> => {
+  const caseIds = [...new Set(config.datasetVersions.flatMap((entry) => entry.caseIds ?? []))]
+  const packages = state.tracePackages.filter((item) => (config.tracePackageIds ?? []).includes(item.id) || caseIds.includes(item.caseId))
+  const moduleEvaluations = packages.flatMap((item) => item.moduleScores).map((item) => clone(item))
+  const artifacts = state.artifacts.filter((item) => (config.artifactIds ?? []).includes(item.id) || caseIds.includes(item.caseId)).map((item) => clone(item))
+  const rootEvidenceIds = config.evidenceBundleIds?.length ? config.evidenceBundleIds : moduleEvaluations.flatMap((score) => score.evidence.rootEvidenceIds)
+  const rootEvidence = rootEvidenceIds.map((id) => state.evidence.find((item) => item.id === id)).filter((item): item is Evidence => Boolean(item)).map((item) => clone(item))
+  const observations = state.observations.filter((item) => caseIds.includes(item.caseId)).map((item) => clone(item))
+  const processEvals = state.processEvals.filter((item) => caseIds.includes(item.caseId)).map((item) => clone(item))
+  const outcomeEvals = state.outcomeEvals.filter((item) => caseIds.includes(item.caseId)).map((item) => clone(item))
+  return clone({ capturedAt, evalAgentVersion: config.evalAgentVersion, rubricVersion: config.rubricVersion, artifactIds: artifacts.map((item) => item.id), evidenceBundleIds: rootEvidence.map((item) => item.id), tracePackageIds: packages.map((item) => item.id), moduleEvaluations, tracePackages: packages.map(({ id, batchId, caseId, sessionId, traceId, query, agentVersion, skillVersion, skillCategory }) => ({ id, batchId, caseId, sessionId, traceId, query, agentVersion, skillVersion, skillCategory })), artifacts, rootEvidence, observations, processEvals, outcomeEvals })
+}
+
+const freezeExperimentConfig = (state: EvolutionState, source: Experiment, capturedAt: string): ExperimentConfigSnapshot => {
+  const selectedDatasets = source.datasetIds.map((id) => state.datasets.find((dataset) => dataset.id === id)).filter((dataset): dataset is Dataset => Boolean(dataset))
+  const datasetVersions = selectedDatasets.map((dataset) => ({ datasetId: dataset.id, version: dataset.version, versionId: `${dataset.id}@${dataset.version}`, sampleCount: dataset.sampleCount, caseIds: [...dataset.caseIds] }))
+  const caseIds = [...new Set(datasetVersions.flatMap((entry) => entry.caseIds ?? []))]
+  const packages = state.tracePackages.filter((item) => caseIds.includes(item.caseId))
+  const packageIds = packages.map((item) => item.id)
+  const artifactIds = [...new Set(state.artifacts.filter((item) => caseIds.includes(item.caseId)).map((item) => item.id))]
+  const evidenceBundleIds = [...new Set(packages.flatMap((item) => item.moduleScores.flatMap((score) => score.evidence.rootEvidenceIds)))]
+  const firstScore = packages.flatMap((item) => item.moduleScores)[0]
+  const evalAgentVersion = source.configSnapshot.evalAgentVersion ?? firstScore?.evalAgentVersion
+  const rubricVersion = source.configSnapshot.rubricVersion ?? firstScore?.rubricVersion
+  const config = clone({
+    ...source.configSnapshot,
+    datasetVersions,
+    evalAgentVersion,
+    rubricVersion,
+    artifactIds: source.configSnapshot.artifactIds?.length ? [...source.configSnapshot.artifactIds] : artifactIds,
+    evidenceBundleIds: source.configSnapshot.evidenceBundleIds?.length ? [...source.configSnapshot.evidenceBundleIds] : evidenceBundleIds,
+    tracePackageIds: source.configSnapshot.tracePackageIds?.length ? [...source.configSnapshot.tracePackageIds] : packageIds
+  })
+  config.evaluationSnapshot = buildEvaluationSnapshot(state, config, capturedAt)
+  return config
+}
+
+const runEvalSnapshot = (state: EvolutionState, config: ExperimentConfigSnapshot, capturedAt: string): NonNullable<ExperimentRun['evalSnapshot']> => clone(config.evaluationSnapshot ?? buildEvaluationSnapshot(state, config, capturedAt))
+
+const runWindowSnapshot = (state: EvolutionState, experiment: Experiment): ExperimentRun['windowSnapshot'] => {
+  if (!experiment.windowId) return undefined
+  const window = state.windows.find((item) => item.id === experiment.windowId)
+  if (!window) return undefined
+  return clone({ windowId: window.id, candidateVariantIds: window.candidateVariantIds, cutoffAt: window.cutoffAt, frozenAt: window.frozenAt, nextWindowRule: window.nextWindowRule, nextWindowRuleId: window.nextWindowRuleId, nextWindowId: window.nextWindowId })
+}
+
+const normalizeSuppliedRun = (state: EvolutionState, experiment: Experiment, run: ExperimentRun, at: string): ExperimentRun => ({
+  ...clone(run),
+  configSnapshot: clone(experiment.configSnapshot),
+  evalSnapshot: runEvalSnapshot(state, experiment.configSnapshot, at),
+  windowSnapshot: runWindowSnapshot(state, experiment),
+  createdAt: run.createdAt ?? at,
+  updatedAt: run.updatedAt ?? at
+})
 
 export function evolutionReducer(state: EvolutionState, action: EvolutionAction): EvolutionState {
   switch (action.type) {
@@ -134,12 +300,13 @@ export function evolutionReducer(state: EvolutionState, action: EvolutionAction)
         const allPassed = window?.candidateVariantIds.every((variantId) => state.experiments.some((candidate) => candidate.level === 'SINGLE_VARIANT' && candidate.variantIds.length === 1 && candidate.variantIds[0] === variantId && candidate.gateDecisionId && state.gateDecisions.some((decision) => decision.id === candidate.gateDecisionId && decision.conclusion === 'PASS')))
         if (!sameMembership || !allPassed) return state
       }
-      const event = eventFor(action, 'Experiment', action.experiment.id, { configSnapshot: action.experiment.configSnapshot })
+      const configSnapshot = freezeExperimentConfig(state, action.experiment, action.meta.at ?? new Date().toISOString())
+      const event = eventFor(action, 'Experiment', action.experiment.id, { configSnapshot: clone(configSnapshot) })
       const suppliedRuns = (action.runs ?? []).filter((run) => run.experimentId === action.experiment.id)
-      const experiment = { ...action.experiment, runIds: [...new Set([...action.experiment.runIds, ...suppliedRuns.map((run) => run.id)])], configSnapshot: normalizeDatasetSnapshot(JSON.parse(JSON.stringify(action.experiment.configSnapshot)) as Experiment['configSnapshot']), updatedAt: event.at }
+      const experiment = { ...clone(action.experiment), runIds: [...new Set([...action.experiment.runIds, ...suppliedRuns.map((run) => run.id)])], configSnapshot, updatedAt: event.at }
       const variants = state.variants.map((item) => experiment.variantIds.includes(item.id) ? { ...item, experimentIds: addUnique(item.experimentIds, experiment.id), status: item.status === 'DRAFT' || item.status === 'READY' ? 'EXPERIMENTING' as const : item.status, updatedAt: event.at } : item)
       const windows = state.windows.map((item) => item.id !== experiment.windowId ? item : experiment.level === 'SINGLE_VARIANT' ? { ...item, singleExperimentIds: addUnique(item.singleExperimentIds, experiment.id), updatedAt: event.at } : { ...item, combinationExperimentId: experiment.id, updatedAt: event.at })
-      return finalize(state, event, { experiments: [...state.experiments, experiment], experimentRuns: [...state.experimentRuns, ...suppliedRuns], variants, windows })
+      return finalize(state, event, { experiments: [...state.experiments, experiment], experimentRuns: [...state.experimentRuns, ...suppliedRuns.map((run) => normalizeSuppliedRun(state, experiment, run, event.at))], variants, windows })
     }
     case 'UPDATE_EXPERIMENT': {
       const current = state.experiments.find((item) => item.id === action.experimentId)
@@ -154,11 +321,12 @@ export function evolutionReducer(state: EvolutionState, action: EvolutionAction)
       const experiment = state.experiments.find((item) => item.id === action.experimentId)
       if (!experiment || (!['DRAFT', 'QUEUED'].includes(experiment.status) && !(action.retry && experiment.status === 'FAILED'))) return state
       if (experiment.level === 'WINDOW_COMBINATION' && experiment.variantIds.some((variantId) => !state.experiments.some((candidate) => candidate.level === 'SINGLE_VARIANT' && candidate.variantIds.length === 1 && candidate.variantIds[0] === variantId && candidate.gateDecisionId && state.gateDecisions.some((decision) => decision.id === candidate.gateDecisionId && decision.conclusion === 'PASS')))) return state
-      const caseIds = [...new Set(action.caseIds?.filter((id) => state.cases.some((item) => item.id === id)) ?? experiment.configSnapshot.datasetVersions.flatMap((version) => state.datasets.find((dataset) => dataset.id === version.datasetId)?.caseIds ?? []))]
+      const frozenCaseIds = experiment.configSnapshot.datasetVersions.flatMap((version) => version.caseIds ?? state.datasets.find((dataset) => dataset.id === version.datasetId)?.caseIds ?? [])
+      const caseIds = [...new Set(action.caseIds?.filter((id) => frozenCaseIds.includes(id) && state.cases.some((item) => item.id === id)) ?? frozenCaseIds)]
       if (!caseIds.length) return state
       const event = eventFor(action, 'Experiment', experiment.id, { caseIds, retry: Boolean(action.retry) })
       const configHash = `cfg-${experiment.id}-${experiment.configSnapshot.createdAt}`
-      const runs = caseIds.flatMap((caseId) => (['BASELINE', 'CANDIDATE'] as const).flatMap((arm) => Array.from({ length: experiment.configSnapshot.repeatCount }, (_, offset): ExperimentRun => ({ id: `run-${experiment.id}-${caseId}-${arm.toLowerCase()}-${offset + 1}`, experimentId: experiment.id, caseId, repetition: offset + 1, arm, status: 'RUNNING', durationMs: 0, configHash, createdAt: event.at, updatedAt: event.at }))))
+      const runs = caseIds.flatMap((caseId) => (['BASELINE', 'CANDIDATE'] as const).flatMap((arm) => Array.from({ length: experiment.configSnapshot.repeatCount }, (_, offset): ExperimentRun => ({ id: `run-${experiment.id}-${caseId}-${arm.toLowerCase()}-${offset + 1}`, experimentId: experiment.id, caseId, repetition: offset + 1, arm, status: 'RUNNING', durationMs: 0, configHash, configSnapshot: clone(experiment.configSnapshot), evalSnapshot: runEvalSnapshot(state, experiment.configSnapshot, event.at), windowSnapshot: runWindowSnapshot(state, experiment), createdAt: event.at, updatedAt: event.at }))))
       const experiments = state.experiments.map((item) => item.id === experiment.id ? { ...item, runIds: runs.map((run) => run.id), metrics: [], failedCaseIds: [], status: 'RUNNING' as const, gateDecisionId: undefined, updatedAt: event.at } : item)
       return finalize(state, event, { experiments, experimentRuns: [...state.experimentRuns.filter((run) => run.experimentId !== experiment.id), ...runs] })
     }
@@ -271,6 +439,144 @@ export function evolutionReducer(state: EvolutionState, action: EvolutionAction)
       if (!current || current.frozen || !current.name.trim() || !current.scope.trim() || !current.source.trim() || !current.population.sourceSystem.trim() || !current.population.countingRule.trim()) return state
       const event = eventFor(action, 'Dataset', action.datasetId, { frozen: true })
       return finalize(state, event, { datasets: state.datasets.map((item) => item.id === action.datasetId ? { ...item, frozen: true, updatedAt: event.at } : item) })
+    }
+    case 'CREATE_EVALUATION_BATCH': {
+      if (state.evaluationBatches.some((item) => item.id === action.batch.id) || action.batch.traceIds.some((id) => !state.traces.some((trace) => trace.id === id))) return state
+      const eventAt = action.meta.at ?? new Date().toISOString()
+      const traceIds = [...new Set(action.batch.traceIds)]
+      const placeholders = traceIds.map((traceId) => pendingPackage(state, action.batch, traceId, eventAt))
+      const event = eventFor(action, 'EvaluationBatch', action.batch.id, { traceCount: traceIds.length, packageIds: placeholders.map((item) => item.id) })
+      const batch = { ...action.batch, traceIds, packageIds: [...new Set([...action.batch.packageIds, ...placeholders.map((item) => item.id)])], jobIds: [...new Set(action.batch.jobIds)], stats: { ...action.batch.stats, inputTraceCount: traceIds.length, pendingCount: traceIds.length, successCount: 0, partialCount: 0, failedCount: 0 }, updatedAt: event.at }
+      return finalize(state, event, { evaluationBatches: [...state.evaluationBatches, batch], tracePackages: [...state.tracePackages, ...placeholders] })
+    }
+    case 'QUEUE_EVALUATION_JOB': {
+      if (state.evaluationJobs.some((item) => item.id === action.job.id) || !state.evaluationBatches.some((batch) => batch.id === action.job.batchId) || action.job.traceIds.some((id) => !state.traces.some((trace) => trace.id === id))) return state
+      const event = eventFor(action, 'EvaluationJob', action.job.id, { batchId: action.job.batchId, attempt: action.job.attempt })
+      const job = { ...action.job, status: action.job.status, updatedAt: event.at } as EvaluationJob
+      const batches = state.evaluationBatches.map((batch) => batch.id !== job.batchId ? batch : { ...batch, jobIds: addUnique(batch.jobIds, job.id), status: batch.status === 'DRAFT' ? 'QUEUED' as const : batch.status, updatedAt: event.at })
+      return finalize(state, event, { evaluationJobs: [...state.evaluationJobs, job], evaluationBatches: batches })
+    }
+    case 'START_EVALUATION_JOB': {
+      const current = state.evaluationJobs.find((item) => item.id === action.jobId)
+      if (!current || current.status !== 'QUEUED') return state
+      const event = eventFor(action, 'EvaluationJob', current.id, { status: 'RUNNING' })
+      const evaluationJobs = state.evaluationJobs.map((item) => item.id === current.id ? { ...item, status: 'RUNNING' as const, startedAt: event.at, updatedAt: event.at } : item)
+      const evaluationBatches = state.evaluationBatches.map((item) => item.id === current.batchId ? { ...item, status: 'RUNNING' as const, startedAt: item.startedAt ?? event.at, updatedAt: event.at } : item)
+      return finalize(state, event, { evaluationJobs, evaluationBatches })
+    }
+    case 'COMPLETE_EVALUATION_JOB': {
+      const current = state.evaluationJobs.find((item) => item.id === action.jobId)
+      if (!current || current.status !== 'RUNNING') return state
+      const currentBatch = state.evaluationBatches.find((item) => item.id === current.batchId)
+      if (!currentBatch) return state
+      const materialized = current.traceIds.map((traceId) => materializeTrace(state, currentBatch, current, traceId, action.meta.at ?? new Date().toISOString()))
+      const materializedById = new Map(materialized.map((item) => [item.packageRecord.id, item]))
+      const packageIds = [...new Set([...currentBatch.packageIds, ...materialized.map((item) => item.packageRecord.id)])]
+      const event = eventFor(action, 'EvaluationJob', current.id, { status: 'COMPLETED', packageIds: materialized.map((item) => item.packageRecord.id), traceIds: current.traceIds })
+      const evaluationJobs = state.evaluationJobs.map((item) => item.id === current.id ? { ...item, status: 'COMPLETED' as const, processedTraceIds: [...current.traceIds], failedTraceIds: [], completedAt: event.at, updatedAt: event.at } : item)
+      const tracePackages = state.tracePackages
+        .filter((pkg) => !materializedById.has(pkg.id))
+        .concat(materialized.map((item) => item.packageRecord))
+      const evaluationFindings = state.evaluationFindings
+        .filter((finding) => !materialized.some((item) => item.packageRecord.findingIds.includes(finding.id)))
+        .concat(materialized.flatMap((item) => item.findings))
+      const routingDecisions = state.routingDecisions
+        .filter((decision) => !materialized.some((item) => item.packageRecord.routingDecisionIds.includes(decision.id)))
+        .concat(materialized.flatMap((item) => item.decisions))
+      const routingDeliveries = state.routingDeliveries
+        .filter((delivery) => !materialized.some((item) => item.packageRecord.routingDeliveryIds.includes(delivery.id)))
+        .concat(materialized.flatMap((item) => item.deliveries))
+      const algorithmBadcases = state.algorithmBadcases
+        .filter((badcase) => !materialized.some((item) => item.packageRecord.badcaseIds.includes(badcase.id)))
+        .concat(materialized.flatMap((item) => item.badcases))
+      const badcaseQueues = state.badcaseQueues.map((queue) => {
+        const newDeliveries = materialized.flatMap((item) => item.deliveries.filter((delivery) => delivery.queueId === queue.id).map((delivery) => delivery.id))
+        const newItems = materialized.flatMap((item) => item.badcases.filter((badcase) => badcase.queueId === queue.id).map((badcase) => badcase.id))
+        return { ...queue, deliveryIds: [...new Set([...queue.deliveryIds, ...newDeliveries])], itemIds: [...new Set([...queue.itemIds, ...newItems])], updatedAt: event.at }
+      })
+      const evaluationBatches = state.evaluationBatches.map((item) => {
+        if (item.id !== current.batchId) return item
+        const packages = tracePackages.filter((pkg) => pkg.batchId === item.id)
+        const stats = batchCounts(item.traceIds, packages)
+        const nextStatus: EvaluationBatch['status'] = stats.successCount === stats.inputTraceCount ? 'COMPLETED' : stats.failedCount === stats.inputTraceCount && stats.successCount === 0 ? 'FAILED' : 'PARTIAL'
+        return { ...item, packageIds, status: nextStatus, completedAt: event.at, stats, updatedAt: event.at }
+      })
+      return finalize(state, event, { evaluationJobs, evaluationBatches, tracePackages, evaluationFindings, routingDecisions, routingDeliveries, algorithmBadcases, badcaseQueues })
+    }
+    case 'FAIL_EVALUATION_JOB': {
+      const current = state.evaluationJobs.find((item) => item.id === action.jobId)
+      if (!current || !['QUEUED', 'RUNNING'].includes(current.status) || !action.error.trim()) return state
+      const event = eventFor(action, 'EvaluationJob', current.id, { status: 'FAILED', error: action.error })
+      const evaluationJobs = state.evaluationJobs.map((item) => item.id === current.id ? { ...item, status: 'FAILED' as const, failedTraceIds: [...current.traceIds], errorReason: action.error, completedAt: event.at, updatedAt: event.at } : item)
+      const tracePackages = state.tracePackages.map((pkg) => pkg.batchId === current.batchId && current.traceIds.includes(pkg.traceId) && pkg.status === 'PENDING' ? { ...pkg, status: 'FAILED' as const, processCoverage: 'MISSING' as const, outcomeCoverage: 'MISSING' as const, updatedAt: event.at } : pkg)
+      const evaluationBatches = state.evaluationBatches.map((item) => {
+        if (item.id !== current.batchId) return item
+        const stats = batchCounts(item.traceIds, tracePackages.filter((pkg) => pkg.batchId === item.id))
+        return { ...item, status: stats.failedCount === stats.inputTraceCount ? 'FAILED' as const : 'PARTIAL' as const, errorReason: action.error, stats, updatedAt: event.at }
+      })
+      return finalize(state, event, { evaluationJobs, evaluationBatches, tracePackages })
+    }
+    case 'RETRY_EVALUATION_JOB': {
+      const previous = state.evaluationJobs.find((item) => item.id === action.jobId)
+      if (!previous || !['FAILED', 'PARTIAL', 'CANCELLED'].includes(previous.status)) return state
+      const event = eventFor(action, 'EvaluationJob', previous.id, { retry: true })
+      const retry: EvaluationJob = { ...previous, id: `${previous.id}-retry-${previous.attempt + 1}`, attempt: previous.attempt + 1, status: 'QUEUED', processedTraceIds: [], failedTraceIds: [], queuedAt: event.at, startedAt: undefined, completedAt: undefined, errorReason: undefined, createdAt: event.at, updatedAt: event.at }
+      const batches = state.evaluationBatches.map((batch) => batch.id !== previous.batchId ? batch : { ...batch, jobIds: addUnique(batch.jobIds, retry.id), status: 'QUEUED' as const, updatedAt: event.at })
+      return finalize(state, event, { evaluationJobs: [...state.evaluationJobs, retry], evaluationBatches: batches })
+    }
+    case 'UPDATE_MODULE_EVALUATION': {
+      const pkg = state.tracePackages.find((item) => item.id === action.packageId)
+      if (!pkg || !pkg.moduleScores.some((score) => score.id === action.scoreId)) return state
+      const event = eventFor(action, 'ModuleEvaluationScore', action.scoreId, action.patch as Record<string, unknown>)
+      const humanPatch: Partial<ModuleEvaluationScore> = {
+        humanStatus: action.patch.humanStatus,
+        humanScore: action.patch.humanScore,
+        humanNote: action.patch.humanNote,
+        humanUpdatedAt: action.patch.humanUpdatedAt ?? event.at,
+        humanUpdatedBy: action.patch.humanUpdatedBy ?? action.meta.actor
+      }
+      const moduleScores = pkg.moduleScores.map((score) => score.id === action.scoreId ? { ...score, ...humanPatch, updatedAt: event.at } : score)
+      const tracePackages = state.tracePackages.map((item) => item.id === pkg.id ? { ...item, moduleScores, updatedAt: event.at } : item)
+      return finalize(state, event, { tracePackages })
+    }
+    case 'UPDATE_EVALUATION_FINDING': {
+      const current = state.evaluationFindings.find((item) => item.id === action.findingId)
+      if (!current) return state
+      const event = eventFor(action, 'EvaluationFinding', action.findingId, action.patch as Record<string, unknown>)
+      const allowedPatch = Object.fromEntries(Object.entries({
+        status: action.patch.status,
+        optimizationDimension: action.patch.optimizationDimension,
+        selectedOptimizationCondition: action.patch.selectedOptimizationCondition,
+        description: action.patch.description,
+        routingDecisionIds: action.patch.routingDecisionIds,
+        routingDeliveryIds: action.patch.routingDeliveryIds
+      }).filter(([, value]) => value !== undefined)) as Partial<EvaluationFinding>
+      const evaluationFindings = state.evaluationFindings.map((item) => item.id === action.findingId ? { ...item, ...allowedPatch, updatedAt: event.at } : item)
+      return finalize(state, event, { evaluationFindings })
+    }
+    case 'UPDATE_ROUTING_DECISION': {
+      const current = state.routingDecisions.find((item) => item.id === action.decisionId)
+      if (!current) return state
+      const event = eventFor(action, 'RoutingDecision', action.decisionId, action.patch as Record<string, unknown>)
+      const allowedPatch = Object.fromEntries(Object.entries({ status: action.patch.status, reason: action.patch.reason, confirmedBy: action.patch.confirmedBy, confirmedAt: action.patch.confirmedAt, deliveryIds: action.patch.deliveryIds }).filter(([, value]) => value !== undefined)) as Partial<RoutingDecision>
+      const routingDecisions = state.routingDecisions.map((item) => item.id === action.decisionId ? { ...item, ...allowedPatch, updatedAt: event.at } : item)
+      return finalize(state, event, { routingDecisions })
+    }
+    case 'UPDATE_ROUTING_DELIVERY': {
+      const current = state.routingDeliveries.find((item) => item.id === action.deliveryId)
+      if (!current) return state
+      const event = eventFor(action, 'RoutingDelivery', action.deliveryId, action.patch as Record<string, unknown>)
+      const allowedPatch = Object.fromEntries(Object.entries({ status: action.patch.status, owner: action.patch.owner, note: action.patch.note, deliveredAt: action.patch.deliveredAt, acknowledgedAt: action.patch.acknowledgedAt, issueId: action.patch.issueId, issueClusterId: action.patch.issueClusterId, variantId: action.patch.variantId, regressionDatasetId: action.patch.regressionDatasetId }).filter(([, value]) => value !== undefined)) as Partial<RoutingDelivery>
+      const routingDeliveries = state.routingDeliveries.map((item) => item.id === action.deliveryId ? { ...item, ...allowedPatch, updatedAt: event.at } : item)
+      return finalize(state, event, { routingDeliveries })
+    }
+    case 'UPDATE_ALGORITHM_BADCASE': {
+      const current = state.algorithmBadcases.find((item) => item.id === action.badcaseId)
+      if (!current) return state
+      const event = eventFor(action, 'AlgorithmBadcaseItem', action.badcaseId, action.patch as Record<string, unknown>)
+      const allowedPatch = Object.fromEntries(Object.entries({ status: action.patch.status, owner: action.patch.owner, note: action.patch.note, confirmedBy: action.patch.confirmedBy, confirmedAt: action.patch.confirmedAt, regressionDatasetId: action.patch.regressionDatasetId, issueId: action.patch.issueId, issueClusterId: action.patch.issueClusterId, variantId: action.patch.variantId }).filter(([, value]) => value !== undefined)) as Partial<AlgorithmBadcaseItem>
+      const algorithmBadcases = state.algorithmBadcases.map((item) => item.id === action.badcaseId ? { ...item, ...allowedPatch, updatedAt: event.at } : item)
+      return finalize(state, event, { algorithmBadcases })
     }
     case 'RESET': return action.state
     default: return state

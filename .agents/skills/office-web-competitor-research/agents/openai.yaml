@@ -1,0 +1,4 @@
+interface:
+  display_name: "Office 网页竞品研究"
+  short_description: "实测附件与一句话生成网页，比较首稿、模板和迭代成本"
+  default_prompt: "使用 $office-web-competitor-research 建立并执行一轮可复现的 Office 网页 Agent 竞品研究，保留证据并输出产品机会。"

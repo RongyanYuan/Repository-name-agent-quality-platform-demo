@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
-import { QualityProvider } from '../../store'
+import { useEffect, type ReactNode } from 'react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { QualityProvider, useQuality } from '../../store'
 import { createInitialEvolutionData } from '../data'
 import { createLocalEvolutionRepository } from '../repository'
 import { EvolutionProvider } from '../store'
@@ -9,11 +10,18 @@ import { AssetsSkillsPage } from './AssetsSkillsPage'
 import { AttributionClustersPage } from './AttributionClustersPage'
 import { VariantsPage } from './VariantsPage'
 
+function FullHistoryScope({ children }: { children?: ReactNode }) {
+  const { state, dispatch } = useQuality()
+  useEffect(() => { dispatch({ type: 'SET_FILTERS', filters: { timeRange: '30d' } }) }, [dispatch])
+  return state.filters.timeRange === '30d' ? children : null
+}
+
 function renderPage(page: React.ReactNode) {
-  return render(<MemoryRouter><QualityProvider><EvolutionProvider initialState={createInitialEvolutionData()}>{page}</EvolutionProvider></QualityProvider></MemoryRouter>)
+  return render(<MemoryRouter><QualityProvider><FullHistoryScope><EvolutionProvider initialState={createInitialEvolutionData()}>{page}</EvolutionProvider></FullHistoryScope></QualityProvider></MemoryRouter>)
 }
 
 describe('Issue, Variant and Skill/Asset governance mutations', () => {
+  beforeEach(() => localStorage.clear())
   it('persists a full Issue edit and phase-two processing chain across provider remounts', async () => {
     const repository = createLocalEvolutionRepository({ storage: window.localStorage, storageKey: `issue-edit-${Date.now()}` })
     repository.save(createInitialEvolutionData())
@@ -73,7 +81,7 @@ describe('Issue, Variant and Skill/Asset governance mutations', () => {
   it('shows 37/100 for taste only and keeps the unrelated cluster threshold pending', () => {
     const state = createInitialEvolutionData()
     state.issueClusters.find((item) => item.id === 'cluster-ppt-taste-pending')!.currentCount = 999
-    render(<MemoryRouter><QualityProvider><EvolutionProvider initialState={state}><AttributionClustersPage initialClusterId="cluster-ppt-taste-pending" /></EvolutionProvider></QualityProvider></MemoryRouter>)
+    render(<MemoryRouter><QualityProvider><FullHistoryScope><EvolutionProvider initialState={state}><AttributionClustersPage initialClusterId="cluster-ppt-taste-pending" /></EvolutionProvider></FullHistoryScope></QualityProvider></MemoryRouter>)
     const taste = screen.getByRole('dialog', { name: '问题簇详情' })
     expect(taste).toHaveTextContent('37 / 100')
     expect(taste).toHaveTextContent('Skill ID')
@@ -130,10 +138,9 @@ describe('Issue, Variant and Skill/Asset governance mutations', () => {
     const skillDetail = screen.getByRole('dialog', { name: 'Skill 详情' })
     expect(skillDetail).toHaveTextContent('OFFICIAL')
     expect(skillDetail).toHaveTextContent('2.6.0')
-    fireEvent.click(within(skillDetail).getByRole('button', { name: 'variant-ppt-routing-v3' }))
-    fireEvent.click(within(skillDetail).getByRole('button', { name: 'asset-executive-template' }))
-    expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ kind: 'variant', id: 'variant-ppt-routing-v3' }))
-    expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ kind: 'asset', id: 'asset-executive-template' }))
+    expect(skillDetail).not.toHaveTextContent('variant-ppt-routing-v3')
+    expect(skillDetail).not.toHaveTextContent('asset-executive-template')
+    fireEvent.click(within(skillDetail).getByRole('button', { name: '打开数据集与评测' }))
     unmount()
     renderPage(<AssetsSkillsPage initialAssetId="asset-executive-template" onNavigateReference={onNavigate} />)
     const assetDetail = screen.getByRole('dialog', { name: '资产详情' })

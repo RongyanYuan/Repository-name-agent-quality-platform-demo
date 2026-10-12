@@ -7,6 +7,167 @@ import { validateEvolutionState } from './data/validation'
 const meta = { actor: '治理测试员', reason: '测试变更', at: '2026-09-28T12:00:00.000Z', auditId: 'audit-test' }
 
 describe('evolution reducer', () => {
+  it('materializes a batch-scoped Trace Evaluation Package and routing graph when a job completes', () => {
+    const state = createInitialEvolutionData()
+    const traceId = 'trace-ppt-generate'
+    const at = '2026-09-30T12:30:00.000Z'
+    const batch = {
+      id: 'batch-test-materialize', name: '测试批次', status: 'DRAFT' as const, traceIds: [traceId], packageIds: [], jobIds: [],
+      evalAgentVersion: 'eval-agent-test', rubricVersion: 'rubric-test', runEnvironment: 'local-mock-runner', createdBy: '测试员',
+      stats: { inputTraceCount: 1, successCount: 0, partialCount: 0, failedCount: 0, pendingCount: 1 }, createdAt: at, updatedAt: at
+    }
+    const job = { id: 'job-test-materialize', batchId: batch.id, attempt: 1, status: 'QUEUED' as const, traceIds: [traceId], processedTraceIds: [], failedTraceIds: [], evalAgentVersion: batch.evalAgentVersion, rubricVersion: batch.rubricVersion, runEnvironment: batch.runEnvironment, configurationSnapshot: { source: 'test' }, createdAt: at, updatedAt: at }
+    const completed = evolutionReducer(
+      evolutionReducer(
+        evolutionReducer(
+          evolutionReducer(state, { type: 'CREATE_EVALUATION_BATCH', batch, meta: { ...meta, at } }),
+          { type: 'QUEUE_EVALUATION_JOB', job, meta: { ...meta, at } }
+        ),
+        { type: 'START_EVALUATION_JOB', jobId: job.id, meta: { ...meta, at } }
+      ),
+      { type: 'COMPLETE_EVALUATION_JOB', jobId: job.id, meta: { ...meta, at } }
+    )
+
+    const materialized = completed.tracePackages.filter((item) => item.batchId === batch.id)
+    expect(materialized).toHaveLength(1)
+    expect(materialized[0].traceId).toBe(traceId)
+    expect(materialized[0].id).not.toBe(`package-${traceId}`)
+    expect(materialized[0].moduleScores.length).toBeGreaterThan(0)
+    expect(completed.evaluationFindings.some((item) => item.packageId === materialized[0].id)).toBe(true)
+    expect(completed.routingDeliveries.some((item) => item.packageId === materialized[0].id)).toBe(true)
+    expect(completed.evaluationBatches.find((item) => item.id === batch.id)?.packageIds).toEqual([materialized[0].id])
+    const stats = completed.evaluationBatches.find((item) => item.id === batch.id)!.stats
+    expect(stats.inputTraceCount).toBe(stats.successCount + stats.partialCount + stats.failedCount + stats.pendingCount)
+    expect(stats.pendingCount).toBe(0)
+    expect(materialized[0].moduleScores.every((score) => score.evalAgentVersion === 'eval-agent-test' && score.rubricVersion === 'rubric-test')).toBe(true)
+    const algorithmDelivery = completed.routingDeliveries.find((item) => item.packageId === materialized[0].id && item.destination === 'ALGORITHM_BADCASE')!
+    const candidate = completed.algorithmBadcases.find((item) => item.id === algorithmDelivery.algorithmBadcaseId)!
+    expect(candidate.status).toBe('CANDIDATE')
+    expect(algorithmDelivery.status).toBe('PENDING')
+    expect(completed.badcaseQueues.find((item) => item.id === candidate.queueId)?.itemIds).toContain(candidate.id)
+    expect(completed.badcaseQueues.find((item) => item.id === algorithmDelivery.queueId)?.deliveryIds).toContain(algorithmDelivery.id)
+    expect(validateEvolutionState(completed)).toEqual([])
+  })
+
+  it('lists newly created batch Traces as pending before a job starts', () => {
+    const state = createInitialEvolutionData()
+    const at = '2026-09-30T12:35:00.000Z'
+    const batch = {
+      id: 'batch-test-pending', name: '待运行批次', status: 'DRAFT' as const, traceIds: ['trace-ppt-generate'], packageIds: [], jobIds: [],
+      evalAgentVersion: 'eval-agent-2.4.0', rubricVersion: 'rubric-office-v2.1', runEnvironment: 'local-mock-runner', createdBy: '测试员',
+      stats: { inputTraceCount: 1, successCount: 0, partialCount: 0, failedCount: 0, pendingCount: 1 }, createdAt: at, updatedAt: at
+    }
+    const created = evolutionReducer(state, { type: 'CREATE_EVALUATION_BATCH', batch, meta: { ...meta, at } })
+    const record = created.tracePackages.find((item) => item.batchId === batch.id)!
+    expect(record.status).toBe('PENDING')
+    expect(record.moduleScores.every((score) => score.automaticStatus === 'UNKNOWN')).toBe(true)
+    expect(created.evaluationBatches.find((item) => item.id === batch.id)?.packageIds).toEqual([record.id])
+    expect(validateEvolutionState(created)).toEqual([])
+  })
+
+  it('does not synthesize PASS when a completed batch has no same-Trace evaluation template', () => {
+    const original = createInitialEvolutionData()
+    const state = { ...original, tracePackages: original.tracePackages.filter((item) => item.traceId !== 'trace-ppt-generate') }
+    const at = '2026-09-30T12:40:00.000Z'
+    const batch = {
+      id: 'batch-test-unknown', name: '无模板批次', status: 'DRAFT' as const, traceIds: ['trace-ppt-generate'], packageIds: [], jobIds: [],
+      evalAgentVersion: 'eval-agent-test', rubricVersion: 'rubric-test', runEnvironment: 'local-mock-runner', createdBy: '测试员',
+      stats: { inputTraceCount: 1, successCount: 0, partialCount: 0, failedCount: 0, pendingCount: 1 }, createdAt: at, updatedAt: at
+    }
+    const job = { id: 'job-test-unknown', batchId: batch.id, attempt: 1, status: 'RUNNING' as const, traceIds: batch.traceIds, processedTraceIds: [], failedTraceIds: [], evalAgentVersion: batch.evalAgentVersion, rubricVersion: batch.rubricVersion, runEnvironment: batch.runEnvironment, configurationSnapshot: { source: 'test' }, createdAt: at, updatedAt: at }
+    const next = evolutionReducer(
+      evolutionReducer(
+        evolutionReducer(state, { type: 'CREATE_EVALUATION_BATCH', batch, meta: { ...meta, at } }),
+        { type: 'QUEUE_EVALUATION_JOB', job: { ...job, status: 'QUEUED' }, meta: { ...meta, at } }
+      ),
+      { type: 'START_EVALUATION_JOB', jobId: job.id, meta: { ...meta, at } }
+    )
+    const completed = evolutionReducer(next, { type: 'COMPLETE_EVALUATION_JOB', jobId: job.id, meta: { ...meta, at } })
+    const pkg = completed.tracePackages.find((item) => item.batchId === batch.id)!
+    expect(pkg.status).toBe('PARTIAL')
+    expect(pkg.moduleScores.every((score) => score.automaticStatus === 'UNKNOWN')).toBe(true)
+    expect(pkg.moduleScores.every((score) => score.score === undefined)).toBe(true)
+    expect(completed.evaluationFindings.filter((item) => item.packageId === pkg.id)).toHaveLength(0)
+  })
+
+  it('keeps failed job history while retrying and materializes only the retry result', () => {
+    const state = createInitialEvolutionData()
+    const at = '2026-09-30T12:50:00.000Z'
+    const batch = {
+      id: 'batch-test-retry', name: '重试批次', status: 'DRAFT' as const, traceIds: ['trace-ppt-generate'], packageIds: [], jobIds: [],
+      evalAgentVersion: 'eval-agent-test', rubricVersion: 'rubric-test', runEnvironment: 'local-mock-runner', createdBy: '测试员',
+      stats: { inputTraceCount: 1, successCount: 0, partialCount: 0, failedCount: 0, pendingCount: 1 }, createdAt: at, updatedAt: at
+    }
+    const queuedJob = { id: 'job-test-retry', batchId: batch.id, attempt: 1, status: 'QUEUED' as const, traceIds: batch.traceIds, processedTraceIds: [], failedTraceIds: [], evalAgentVersion: batch.evalAgentVersion, rubricVersion: batch.rubricVersion, runEnvironment: batch.runEnvironment, configurationSnapshot: { source: 'test' }, createdAt: at, updatedAt: at }
+    const failed = evolutionReducer(
+      evolutionReducer(
+        evolutionReducer(
+          evolutionReducer(state, { type: 'CREATE_EVALUATION_BATCH', batch, meta: { ...meta, at } }),
+          { type: 'QUEUE_EVALUATION_JOB', job: queuedJob, meta: { ...meta, at } }
+        ),
+        { type: 'START_EVALUATION_JOB', jobId: queuedJob.id, meta: { ...meta, at } }
+      ),
+      { type: 'FAIL_EVALUATION_JOB', jobId: queuedJob.id, error: '测试失败', meta: { ...meta, at } }
+    )
+    const retried = evolutionReducer(failed, { type: 'RETRY_EVALUATION_JOB', jobId: queuedJob.id, meta: { ...meta, at } })
+    const retryJob = retried.evaluationJobs.find((item) => item.id !== queuedJob.id && item.batchId === batch.id)!
+    expect(retried.evaluationJobs.find((item) => item.id === queuedJob.id)?.status).toBe('FAILED')
+    expect(retryJob.attempt).toBe(2)
+    const completed = evolutionReducer(
+      evolutionReducer(retried, { type: 'START_EVALUATION_JOB', jobId: retryJob.id, meta: { ...meta, at } }),
+      { type: 'COMPLETE_EVALUATION_JOB', jobId: retryJob.id, meta: { ...meta, at } }
+    )
+    expect(completed.evaluationJobs.map((item) => item.id)).toEqual(expect.arrayContaining([queuedJob.id, retryJob.id]))
+    expect(completed.tracePackages.filter((item) => item.batchId === batch.id)).toHaveLength(1)
+    expect(completed.evaluationBatches.find((item) => item.id === batch.id)?.jobIds).toEqual([queuedJob.id, retryJob.id])
+  })
+
+  it('marks attempted Trace placeholders as failed and keeps batch counts conserved when the job fails', () => {
+    const state = createInitialEvolutionData()
+    const at = '2026-09-30T12:55:00.000Z'
+    const batch = {
+      id: 'batch-test-fail-stats', name: '失败统计批次', status: 'DRAFT' as const, traceIds: ['trace-ppt-generate'], packageIds: [], jobIds: [],
+      evalAgentVersion: 'eval-agent-test', rubricVersion: 'rubric-test', runEnvironment: 'local-mock-runner', createdBy: '测试员',
+      stats: { inputTraceCount: 1, successCount: 0, partialCount: 0, failedCount: 0, pendingCount: 1 }, createdAt: at, updatedAt: at
+    }
+    const queuedJob = { id: 'job-test-fail-stats', batchId: batch.id, attempt: 1, status: 'QUEUED' as const, traceIds: batch.traceIds, processedTraceIds: [], failedTraceIds: [], evalAgentVersion: batch.evalAgentVersion, rubricVersion: batch.rubricVersion, runEnvironment: batch.runEnvironment, configurationSnapshot: { source: 'test' }, createdAt: at, updatedAt: at }
+    const queued = evolutionReducer(evolutionReducer(state, { type: 'CREATE_EVALUATION_BATCH', batch, meta: { ...meta, at } }), { type: 'QUEUE_EVALUATION_JOB', job: queuedJob, meta: { ...meta, at } })
+    const failed = evolutionReducer(queued, { type: 'FAIL_EVALUATION_JOB', jobId: queuedJob.id, error: '超时', meta: { ...meta, at } })
+    expect(failed.tracePackages.find((item) => item.batchId === batch.id)?.status).toBe('FAILED')
+    expect(failed.evaluationBatches.find((item) => item.id === batch.id)?.stats).toEqual({ inputTraceCount: 1, successCount: 0, partialCount: 0, failedCount: 1, pendingCount: 0 })
+  })
+
+
+  it('keeps automatic module evidence and source IDs immutable during human override', () => {
+    const state = createInitialEvolutionData()
+    const pkg = state.tracePackages.find((item) => item.traceId === 'trace-ppt-generate')!
+    const before = pkg.moduleScores.find((item) => item.moduleCode === 'SKILL')!
+    const meta = { actor: '测试员', reason: '人工复核', at: '2026-09-30T12:00:00.000Z' }
+    const next = evolutionReducer(state, { type: 'UPDATE_MODULE_EVALUATION', packageId: pkg.id, scoreId: before.id, patch: { automaticStatus: 'PASS', judgeReason: '被篡改', evidence: { ...before.evidence, rootEvidenceIds: [] }, humanStatus: 'PASS', humanNote: '人工接受', humanUpdatedBy: '测试员' }, meta })
+    const after = next.tracePackages.find((item) => item.id === pkg.id)!.moduleScores.find((item) => item.id === before.id)!
+    expect(after.automaticStatus).toBe(before.automaticStatus)
+    expect(after.judgeReason).toBe(before.judgeReason)
+    expect(after.evidence).toEqual(before.evidence)
+    expect(after.humanStatus).toBe('PASS')
+    expect(after.humanNote).toBe('人工接受')
+    expect(next.auditTrail.at(-1)).toMatchObject({ action: 'UPDATE_MODULE_EVALUATION', entityId: before.id })
+  })
+
+  it('does not claim a batch is fully evaluated when a Mock job has no module results', () => {
+    const state = createInitialEvolutionData()
+    const batch = state.evaluationBatches.find((item) => item.status === 'DRAFT')!
+    const at = '2026-09-30T13:00:00.000Z'
+    const job = { id: 'job-test-empty-results', batchId: batch.id, attempt: 1, status: 'QUEUED' as const, traceIds: [...batch.traceIds], processedTraceIds: [], failedTraceIds: [], evalAgentVersion: batch.evalAgentVersion, rubricVersion: batch.rubricVersion, runEnvironment: batch.runEnvironment, configurationSnapshot: { source: 'test' }, createdAt: at, updatedAt: at }
+    const queued = evolutionReducer(state, { type: 'QUEUE_EVALUATION_JOB', job, meta: { actor: '测试员', reason: '排队', at } })
+    const running = evolutionReducer(queued, { type: 'START_EVALUATION_JOB', jobId: job.id, meta: { actor: '测试员', reason: '开始', at } })
+    const completed = evolutionReducer(running, { type: 'COMPLETE_EVALUATION_JOB', jobId: job.id, meta: { actor: '测试员', reason: 'Mock 作业结束', at } })
+    const completedBatch = completed.evaluationBatches.find((item) => item.id === batch.id)!
+    expect(completed.evaluationJobs.find((item) => item.id === job.id)?.status).toBe('COMPLETED')
+    expect(completedBatch.status).toBe('PARTIAL')
+    expect(completedBatch.stats.successCount).toBe(0)
+    expect(completedBatch.stats.partialCount).toBe(batch.traceIds.length)
+    expect(completedBatch.stats.pendingCount).toBe(0)
+  })
   it('updates a case and writes an audit trail entry', () => {
     const state = createInitialEvolutionData()
     const next = evolutionReducer(state, { type: 'UPDATE_CASE', caseId: 'case-tool-export', patch: { status: 'RESOLVED', owner: 'Tool 团队' }, meta })

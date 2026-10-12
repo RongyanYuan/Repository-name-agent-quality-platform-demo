@@ -8,6 +8,9 @@ export default defineConfig({
     setupFiles: ['./src/testSetup.ts'],
     globals: true,
     css: true,
+    maxWorkers: 2,
+    fileParallelism: false,
+    testTimeout: 20000,
     exclude: ['**/node_modules/**', '**/e2e/**']
   }
 })

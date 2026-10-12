@@ -6,12 +6,14 @@ export type ReferenceKind =
   | 'case' | 'session' | 'trace' | 'observation' | 'log' | 'evidence' | 'artifact' | 'process-eval' | 'outcome-eval'
   | 'attribution' | 'issue' | 'cluster' | 'skill' | 'asset' | 'variant' | 'dataset' | 'rule'
   | 'experiment' | 'experiment-run' | 'window' | 'decision' | 'release'
+  | 'evaluation-batch' | 'evaluation-job' | 'trace-package' | 'finding' | 'routing-policy' | 'routing-decision' | 'routing-delivery' | 'badcase' | 'badcase-queue'
 
 export interface ReferenceTarget { kind: ReferenceKind; id: string }
 export const REFERENCE_KINDS: readonly ReferenceKind[] = [
   'case', 'session', 'trace', 'observation', 'log', 'evidence', 'artifact', 'process-eval', 'outcome-eval',
   'attribution', 'issue', 'cluster', 'skill', 'asset', 'variant', 'dataset', 'rule',
-  'experiment', 'experiment-run', 'window', 'decision', 'release'
+  'experiment', 'experiment-run', 'window', 'decision', 'release',
+  'evaluation-batch', 'evaluation-job', 'trace-package', 'finding', 'routing-policy', 'routing-decision', 'routing-delivery', 'badcase', 'badcase-queue'
 ]
 
 export const panelClass = 'min-w-0 rounded-lg border border-line bg-panel p-4 shadow-panel'

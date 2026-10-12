@@ -1,10 +1,11 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import { useEffect, useRef, type PropsWithChildren } from 'react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { useLocation } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EvolutionProvider } from '../store'
-import { QualityProvider } from '../../store'
+import { QualityProvider as BaseQualityProvider, useQuality } from '../../store'
 import { IdLink, REFERENCE_KINDS } from '../components/ViewPrimitives'
 import {
   AssetsSkillsPage,
@@ -17,6 +18,22 @@ import {
   RuleConfigurationPage,
   VariantsPage
 } from './index'
+import { DatasetEvaluationWorkbenchPage } from './DatasetEvaluationWorkbenchPage'
+import { createInitialEvolutionData } from '../data'
+
+function FullFixtureScope({ children }: PropsWithChildren) {
+  const { state, dispatch } = useQuality()
+  const initialized = useRef(false)
+  useEffect(() => { dispatch({ type: 'SET_FILTERS', filters: { timeRange: '30d' } }) }, [dispatch])
+  if (state.filters.timeRange === '30d') initialized.current = true
+  return initialized.current ? children : null
+}
+
+function QualityProvider({ children }: PropsWithChildren) {
+  return <BaseQualityProvider><FullFixtureScope>{children}</FullFixtureScope></BaseQualityProvider>
+}
+
+beforeEach(() => localStorage.clear())
 
 function renderPage(page: React.ReactNode) {
   return render(<MemoryRouter><QualityProvider><EvolutionProvider>{page}</EvolutionProvider></QualityProvider></MemoryRouter>)
@@ -25,6 +42,21 @@ function renderPage(page: React.ReactNode) {
 function LocationProbe() {
   const location = useLocation()
   return <output data-testid="overview-location">{`${location.pathname}${location.search}`}</output>
+}
+
+function renderWorkbench(url = '/datasets-evaluations') {
+  return render(<MemoryRouter initialEntries={[url]}><QualityProvider><EvolutionProvider><DatasetEvaluationWorkbenchPage /><LocationProbe /></EvolutionProvider></QualityProvider></MemoryRouter>)
+}
+
+function renderControlledOverview(url = '/overview') {
+  const state = createInitialEvolutionData()
+  // These three independently known failed tasks are the test population,
+  // not a selector-computed expectation from the growing demonstration seed.
+  state.cases = state.cases.filter(record => ['case-ppt-management', 'case-tool-export', 'case-multi-route'].includes(record.id))
+  state.tracePackages.filter(pkg => state.cases.some(record => record.id === pkg.caseId)).forEach(pkg => {
+    pkg.moduleScores.filter(score => score.moduleCode === 'OUTCOME').forEach(score => { score.automaticStatus = 'FAIL'; score.humanStatus = undefined })
+  })
+  return render(<MemoryRouter initialEntries={[url]}><QualityProvider><EvolutionProvider initialState={state}><GovernanceOverviewPage /><LocationProbe /></EvolutionProvider></QualityProvider></MemoryRouter>)
 }
 
 describe('Office Agent 自进化治理页面', () => {
@@ -115,6 +147,76 @@ describe('Office Agent 自进化治理页面', () => {
     expect(screen.getAllByText('待配置').length).toBeGreaterThan(0)
   })
 
+  it('shows independent test sets for a fixed Skill version and attribution without inheriting old gate results', () => {
+    renderWorkbench('/datasets-evaluations?skill=skill-ppt-builder&skillVersion=2.6.0&governanceObject=Memory')
+    expect(screen.getByText('当前治理对象：Skill')).toBeVisible()
+    fireEvent.change(screen.getByLabelText('归因'), { target: { value: 'skill-sop' } })
+    const datasets = screen.getByRole('table', { name: '数据集与评测列表' })
+    expect(datasets).toHaveTextContent('原始归因集')
+    expect(datasets).toHaveTextContent('dataset-workspace-ppt-260-sop-attribution')
+    expect(datasets).not.toHaveTextContent('已准出')
+    expect(screen.getByTestId('overview-location')).toHaveTextContent('attribution=skill-sop')
+  })
+
+  it('filters existing version attributions by module and opens their complete history', () => {
+    renderWorkbench('/datasets-evaluations?skillVersion=2.5.0')
+    fireEvent.change(screen.getByLabelText('归因对象'), { target: { value: 'Memory' } })
+    const itemFilter = screen.getByLabelText('归因')
+    expect(within(itemFilter).getByRole('option', { name: /召回率低（详情见记忆模块PRD）/ })).toBeVisible()
+    expect(within(itemFilter).queryByRole('option', { name: /工具未执行成功/ })).not.toBeInTheDocument()
+    fireEvent.change(itemFilter, { target: { value: 'memory-recall' } })
+    fireEvent.click(screen.getByRole('tab', { name: /归因历史/ }))
+    fireEvent.click(within(screen.getByRole('table', { name: '归因历史列表' })).getByRole('row', { name: /PPT Builder.*2\.5\.0.*召回率低/ }))
+    expect(screen.getByRole('dialog', { name: /归因历史详情.*PPT Builder.*2\.5\.0/ })).toHaveTextContent('归因与证据')
+  })
+
+  it('keeps canonical Skill version as part of the attribution history key', () => {
+    renderWorkbench('/datasets-evaluations?skill=skill-ppt-builder&governanceObject=Skill&view=history')
+    fireEvent.change(screen.getByLabelText('Skill 版本'), { target: { value: '2.5.0' } })
+    expect(screen.getByRole('table', { name: '归因历史列表' })).toHaveTextContent('PPT Builder · 2.5.0 · skill sop错误')
+    expect(screen.getByTestId('overview-location')).toHaveTextContent('skillVersion=2.5.0')
+  })
+
+  it('removes the duplicate workbench heading and keeps the current view section', () => {
+    renderPage(<DatasetEvaluationWorkbenchPage />)
+    expect(screen.queryByRole('heading', { name: '数据集与评测' })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '评测集与准出集' })).toBeVisible()
+  })
+
+  it('keeps two collection views connected and preserves explicitly selected historical objects', () => {
+    renderWorkbench('/datasets-evaluations?view=history&skillId=skill-ppt-builder&skillVersion=2.5.0&evolutionItem=skill-sop&experimentId=exp-single-ppt-routing')
+    expect(screen.getAllByRole('tab')).toHaveLength(2)
+    expect(screen.getByRole('dialog', { name: /归因历史详情/ })).toHaveTextContent('exp-single-ppt-routing')
+    fireEvent.click(screen.getByRole('button', { name: '关闭归因历史' }))
+    fireEvent.click(screen.getByRole('tab', { name: /数据集/ }))
+    expect(screen.getByRole('table', { name: '数据集与评测列表' })).toHaveTextContent('原始归因集')
+    fireEvent.click(screen.getByRole('row', { name: /dataset-attribution/ }))
+    expect(screen.getByRole('dialog', { name: /数据集详情/ })).toHaveTextContent('dataset-attribution')
+  })
+
+  it('routes legacy Trace evaluation links to their owning Case analysis instead of a duplicate Trace drawer', () => {
+    renderWorkbench('/datasets-evaluations?view=traces&traceId=trace-ppt-generate&timeRange=30d')
+    expect(screen.getByTestId('overview-location')).toHaveTextContent('/cases?')
+    expect(screen.getByTestId('overview-location')).toHaveTextContent('caseId=case-ppt-management')
+    expect(screen.getByTestId('overview-location')).toHaveTextContent('traceId=trace-ppt-generate')
+    expect(screen.getByTestId('overview-location')).toHaveTextContent('timeRange=30d')
+    expect(screen.queryByRole('dialog', { name: 'Trace 评测详情' })).not.toBeInTheDocument()
+  })
+
+  it('opens dataset member Trace rows and links their exact Case and execution', () => {
+    renderWorkbench('/datasets-evaluations?datasetId=dataset-workspace-ppt-260-sop-attribution&skill=skill-ppt-builder&skillVersion=2.6.0&attribution=skill-sop&timeRange=30d')
+    const samples = within(screen.getByRole('dialog', { name: /数据集详情/ })).getByRole('table', { name: '数据集样本 Trace' })
+    expect(samples).toHaveTextContent('trace-workspace-ppt-260-sop-1')
+    expect(samples).not.toHaveTextContent('trace-tool-export')
+    fireEvent.click(within(samples).getAllByRole('button', { name: '查看 Case / Trace' })[0])
+    expect(screen.getByTestId('overview-location')).toHaveTextContent('/cases?')
+    expect(screen.getByTestId('overview-location')).toHaveTextContent('caseId=case-workspace-ppt-260-sop-1')
+    expect(screen.getByTestId('overview-location')).toHaveTextContent('traceId=trace-workspace-ppt-260-sop-1')
+    const returned = new URLSearchParams(screen.getByTestId('overview-location').textContent!.split('?')[1]).get('returnTo')!
+    expect(returned).toContain('datasetId=dataset-workspace-ppt-260-sop-attribution')
+    expect(returned).toContain('skillVersion=2.6.0')
+  })
+
   it('creates an editable Dataset, changes members, freezes it, and versions frozen data before editing', () => {
     renderPage(<EvolutionDatasetsPage />)
     fireEvent.click(screen.getByRole('button', { name: '新建数据集版本' }))
@@ -164,7 +266,7 @@ describe('Office Agent 自进化治理页面', () => {
     fireEvent.click(screen.getByRole('button', { name: '关闭' }))
     fireEvent.click(screen.getByRole('row', { name: /process-eval-ppt-recall/ }))
     expect(screen.getByRole('dialog', { name: '过程评测详情' })).toHaveTextContent('人工确认召回失败')
-    expect(screen.getByRole('dialog', { name: '过程评测详情' })).toHaveTextContent('AUTOMATIC')
+    expect(screen.getByRole('dialog', { name: '过程评测详情' })).toHaveTextContent('自动')
   })
 
   it('creates and runs a single-variant experiment with a frozen three-repeat snapshot', () => {
@@ -283,7 +385,7 @@ describe('Office Agent 自进化治理页面', () => {
     const onNavigate = vi.fn()
     renderPage(<VariantsPage initialVariantId="variant-ppt-routing-v3" onNavigateReference={onNavigate} />)
     const detail = screen.getByRole('dialog', { name: '变体详情' })
-    expect(detail).toHaveTextContent('RELEASED')
+    expect(detail).toHaveTextContent('已发布')
     expect(detail).toHaveTextContent('创建时间')
     expect(detail).toHaveTextContent('exp-single-ppt-routing')
     fireEvent.click(screen.getByRole('button', { name: 'evidence-ppt-recall' }))
@@ -346,7 +448,7 @@ describe('Office Agent 自进化治理页面', () => {
   })
 
   it('drills overview module and Badcase distributions and shows TTFT percentiles', () => {
-    renderPage(<GovernanceOverviewPage />)
+    renderControlledOverview()
     expect(screen.getByText('TTFT P50 / P90 / P95')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: /Skill 模块问题/ }))
     expect(screen.getByRole('dialog', { name: /Skill 模块问题/ })).toBeVisible()
@@ -360,7 +462,7 @@ describe('Office Agent 自进化治理页面', () => {
   })
 
   it('preserves global URL filters when overview distributions drill into details', () => {
-    render(<MemoryRouter initialEntries={['/overview?timeRange=30d&environment=Production']}><QualityProvider><EvolutionProvider><GovernanceOverviewPage /><LocationProbe /></EvolutionProvider></QualityProvider></MemoryRouter>)
+    renderControlledOverview('/overview?timeRange=30d&environment=Production')
     fireEvent.click(screen.getByRole('button', { name: /Skill 模块问题/ }))
     fireEvent.click(screen.getByRole('button', { name: 'issue-skill-recall' }))
     expect(screen.getByTestId('overview-location')).toHaveTextContent('/issues?timeRange=30d&environment=Production&issueId=issue-skill-recall')
@@ -373,7 +475,7 @@ describe('Office Agent 自进化治理页面', () => {
     ['单变体实验', 'exp-single-ppt-routing', '/experiments', 'experimentId'],
     ['准出 / 拒绝 / 人工复核', 'gate-window-2026w35', '/experiments', 'decisionId']
   ])('uses context navigation for %s and preserves active filters', (stage, id, path, key) => {
-    render(<MemoryRouter initialEntries={['/overview?timeRange=30d&environment=Production&skillVersion=2.6.0&routingTag=Agent+%E8%BF%AD%E4%BB%A3']}><QualityProvider><EvolutionProvider><GovernanceOverviewPage /><LocationProbe /></EvolutionProvider></QualityProvider></MemoryRouter>)
+    renderControlledOverview('/overview?timeRange=30d&environment=Production&skillVersion=2.6.0&routingTag=Agent+%E8%BF%AD%E4%BB%A3')
     fireEvent.click(screen.getByRole('button', { name: new RegExp(stage) }))
     fireEvent.click(screen.getByRole('button', { name: id }))
     const location = screen.getByTestId('overview-location')
@@ -385,7 +487,7 @@ describe('Office Agent 自进化治理页面', () => {
   })
 
   it('drills scoped result, process, latency and TTFT signals to exact Case sets', () => {
-    render(<MemoryRouter initialEntries={['/overview?timeRange=30d&environment=Production']}><QualityProvider><EvolutionProvider><GovernanceOverviewPage /><LocationProbe /></EvolutionProvider></QualityProvider></MemoryRouter>)
+    renderControlledOverview('/overview?timeRange=30d&environment=Production')
     fireEvent.click(screen.getByRole('button', { name: /结果有效率/ }))
     expect(screen.getByTestId('overview-location')).toHaveTextContent('outcomeEval=FAIL')
     expect(screen.getByTestId('overview-location')).toHaveTextContent('caseSet=case-ppt-management%2Ccase-tool-export%2Ccase-multi-route')
@@ -413,7 +515,7 @@ describe('Office Agent 自进化治理页面', () => {
     ['风控拦截率', 'risk', 'case-multi-route'],
     ['商业化拦截率', 'commercial', 'case-tool-export']
   ])('drills %s to its exact contributing Case set', (buttonName, signal, caseSet) => {
-    const view = render(<MemoryRouter initialEntries={['/overview?timeRange=30d&environment=Production']}><QualityProvider><EvolutionProvider><GovernanceOverviewPage /><LocationProbe /></EvolutionProvider></QualityProvider></MemoryRouter>)
+    const view = renderControlledOverview('/overview?timeRange=30d&environment=Production')
     fireEvent.click(screen.getByRole('button', { name: new RegExp(buttonName) }))
     expect(screen.getByTestId('overview-location')).toHaveTextContent(`signal=${signal}`)
     expect(screen.getByTestId('overview-location')).toHaveTextContent(caseSet.includes('%2C') ? `caseSet=${caseSet}` : `caseId=${caseSet}`)

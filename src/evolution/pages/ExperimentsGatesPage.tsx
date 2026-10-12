@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2, Plus, Settings2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, DataTable, Field, FilterBar, Modal, SectionHeader, SelectInput, StatusBadge, Tabs, TextArea, TextInput, type Column } from '../../ui'
 import type { Dataset, Experiment, ExperimentRun, GateDecision } from '../domain'
 import { EntityId, IdLink, KeyValueGrid, PageHeading, TagList, type ReferenceTarget } from '../components/ViewPrimitives'
@@ -47,11 +47,20 @@ export function ExperimentsGatesPage({ onNavigateReference, initialExperimentId,
   const decisions = entities(state as unknown as AnyState, 'gateDecisions')
   const releases = entities(state as unknown as AnyState, 'releases')
   const initialRun = state.experimentRuns.find((item) => item.id === initialRunId)
-  const initialExperiment = experiments.find((item) => item.id === initialExperimentId || item.id === initialRun?.experimentId) ?? experiments.find((item) => item.windowId === initialWindowId)
+  const initialExperiment = experiments.find((item) => item.id === initialExperimentId || item.id === initialRun?.experimentId) ?? (initialWindowId ? experiments.find((item) => item.windowId === initialWindowId) : undefined)
   const initialDecision = decisions.find((item) => item.id === initialDecisionId)
   const [view, setView] = useState<View>(initialDecision ? 'reports' : text(initialExperiment?.level) === 'WINDOW_COMBINATION' ? 'window' : 'single')
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState(initialDecision?.id ?? initialExperiment?.id)
+  const routeKey = `${initialExperimentId ?? ''}:${initialDecisionId ?? ''}:${initialWindowId ?? ''}:${initialRunId ?? ''}`
+  const previousRouteKey = useRef(routeKey)
+  useEffect(() => {
+    if (previousRouteKey.current === routeKey) return
+    previousRouteKey.current = routeKey
+    if (initialExperimentId && experiments.some((item) => item.id === initialExperimentId)) setSelectedId(initialExperimentId)
+    else if (initialDecisionId && decisions.some((item) => item.id === initialDecisionId)) setSelectedId(initialDecisionId)
+    else if (!initialExperimentId && !initialDecisionId && !initialWindowId && !initialRunId) setSelectedId(undefined)
+  }, [decisions, experiments, initialDecisionId, initialExperimentId, initialRunId, initialWindowId, routeKey])
   const [decisionOpen, setDecisionOpen] = useState(false)
   const [conclusion, setConclusion] = useState<GateDecision['conclusion']>('MANUAL_REVIEW')
   const [decisionReason, setDecisionReason] = useState('需要人工复核风险与回归结果。')

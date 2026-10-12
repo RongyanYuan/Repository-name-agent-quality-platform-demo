@@ -14,6 +14,8 @@ describe('evolution demo data', () => {
   })
   it('uses unique evaluated Case denominators and explicitly separates missing evaluations and Badcases', () => {
     const state = createInitialEvolutionData()
+    state.cases = state.cases.filter(record => ['case-ppt-management', 'case-tool-export', 'case-multi-route'].includes(record.id))
+    state.tracePackages = []
     const successful = { ...state.cases[0], id: 'case-success', sessionId: state.sessions[0].id, traceIds: [], artifactIds: [], processEvalIds: ['process-success'], outcomeEvalIds: ['outcome-success'], attributionIds: [], issueIds: [], resultStatus: 'PASS' as const, processStatus: 'PASS' as const }
     const missing = { ...state.cases[0], id: 'case-missing', sessionId: state.sessions[0].id, traceIds: [], artifactIds: [], processEvalIds: [], outcomeEvalIds: [], attributionIds: [], issueIds: [], resultStatus: 'UNKNOWN' as const, processStatus: 'UNKNOWN' as const }
     const unconfirmedFailure = { ...state.cases[0], id: 'case-unconfirmed-failure', sessionId: state.sessions[0].id, traceIds: [], artifactIds: [], processEvalIds: ['process-pending'], outcomeEvalIds: ['outcome-pending'], attributionIds: [], issueIds: [], status: 'EVALUATED' as const, resultStatus: 'FAIL' as const, processStatus: 'FAIL' as const }
@@ -22,6 +24,44 @@ describe('evolution demo data', () => {
     expect(metrics.result).toMatchObject({ numerator: 1, denominator: 5, missingCaseIds: ['case-missing'] })
     expect(metrics.process).toMatchObject({ numerator: 1, denominator: 5, missingCaseIds: ['case-missing'] })
     expect(new Set(metrics.badcaseIds)).toEqual(new Set(['case-ppt-management', 'case-tool-export', 'case-multi-route']))
+  })
+
+  it('includes scoped evaluated Cases regardless of canonical, V2 or workspace ID prefix', () => {
+    const state = createInitialEvolutionData()
+    const cohort = ['case-ppt-management', 'case-v2-production-sop', 'case-workspace-ppt-260-sop-1', 'case-workspace-ppt-260-sop-3']
+    state.cases = state.cases.filter(record => cohort.includes(record.id))
+    const metrics = selectOverviewCaseMetrics(state)
+    expect(metrics.process).toMatchObject({ numerator: 1, denominator: 4, missingCaseIds: [] })
+    expect(metrics.result).toMatchObject({ numerator: 1, denominator: 4, missingCaseIds: [] })
+    expect(metrics.result.passedCaseIds).toEqual(['case-workspace-ppt-260-sop-3'])
+    expect(new Set(metrics.badcaseIds)).toEqual(new Set(['case-ppt-management', 'case-v2-production-sop', 'case-workspace-ppt-260-sop-1']))
+  })
+
+  it('uses evaluated package human conclusions rather than stale Case status without inventing a score threshold', () => {
+    const state = createInitialEvolutionData()
+    state.cases = state.cases.filter(record => record.id === 'case-workspace-ppt-260-sop-3')
+    const record = state.cases[0]
+    record.resultStatus = 'FAIL'
+    record.processStatus = 'FAIL'
+    const pkg = state.tracePackages.find(item => item.caseId === record.id)!
+    pkg.moduleScores.find(score => score.moduleCode === 'REASON')!.humanStatus = 'FAIL'
+    const metrics = selectOverviewCaseMetrics(state)
+    expect(metrics.process).toMatchObject({ numerator: 0, denominator: 1, failedCaseIds: [record.id] })
+    expect(metrics.result).toMatchObject({ numerator: 1, denominator: 1, passedCaseIds: [record.id] })
+  })
+
+  it('does not count a result-only partial package as an evaluated process', () => {
+    const state = createInitialEvolutionData()
+    state.cases = state.cases.filter(record => record.id === 'case-workspace-ppt-260-sop-3')
+    const record = state.cases[0]
+    record.processEvalIds = []
+    const pkg = state.tracePackages.find(item => item.caseId === record.id)!
+    pkg.status = 'PARTIAL'
+    pkg.processCoverage = 'MISSING'
+    pkg.moduleScores = pkg.moduleScores.filter(score => score.moduleCode === 'OUTCOME')
+    const metrics = selectOverviewCaseMetrics(state)
+    expect(metrics.process).toMatchObject({ numerator: 0, denominator: 0, missingCaseIds: [record.id] })
+    expect(metrics.result).toMatchObject({ numerator: 1, denominator: 1 })
   })
   it('keeps the management-PPT case traceable through release', () => {
     const state = createInitialEvolutionData()

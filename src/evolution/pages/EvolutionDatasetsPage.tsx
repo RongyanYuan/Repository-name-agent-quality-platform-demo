@@ -62,7 +62,7 @@ export function EvolutionDatasetsPage({ onNavigateReference, initialDatasetId }:
 
   const columns: Column<Dataset>[] = [
     { key: 'id', header: 'Dataset ID', accessor: (row) => <IdLink id={row.id} kind="dataset" onOpen={navigation.open} /> },
-    { key: 'name', header: '数据集', accessor: (row) => <div><span className="font-semibold">{row.name}</span><p className="mt-1 text-[10px] text-muted">{datasetLabel[row.type]}</p></div> },
+    { key: 'name', header: '数据集', accessor: (row) => <div><button type="button" className="text-left font-semibold text-accent hover:underline" onClick={(event) => { event.stopPropagation(); setSelectedId(row.id) }}>{row.name}</button><p className="mt-1 text-[10px] text-muted">{datasetLabel[row.type]}</p></div> },
     { key: 'version', header: '版本', accessor: (row) => <span className="font-mono text-[11px]">{row.version}</span> },
     { key: 'sampleCount', header: '样本数', accessor: (row) => String(row.sampleCount) },
     { key: 'scope', header: '样本范围', accessor: (row) => <span className="line-clamp-2 max-w-sm">{row.scope}</span> },

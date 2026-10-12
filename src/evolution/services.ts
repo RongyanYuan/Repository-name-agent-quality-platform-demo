@@ -1,4 +1,4 @@
-import type { Evidence, EvolutionState, Experiment, ObservationLog, ProcessEval, OutcomeEval, ReleaseVersion, Trace } from './domain'
+import type { Evidence, EvaluationBatch, EvaluationJob, EvolutionState, Experiment, EvaluationFinding, ObservationLog, OutcomeEval, ProcessEval, ReleaseVersion, RoutingDelivery, Trace, TraceEvaluationPackage } from './domain'
 
 export type ServiceProviderKind = 'LOCAL_MOCK' | 'EXTERNAL'
 export interface ServiceResult<T> { provider: ServiceProviderKind; isMock: boolean; label: string; data: T }
@@ -8,6 +8,12 @@ export interface ExperimentStartResult { experimentId: Experiment['id']; status:
 export interface GenerationPlanRequest { assetId?: string; skillId?: string; name: string }
 export interface GenerationPlanResult { planId: string; assetId?: string; skillId?: string; name: string; status: 'PLANNED'; generationExecuted: false }
 export interface ReleasePublishResult { releaseId: ReleaseVersion['id']; status: ReleaseVersion['status'] }
+export interface EvaluationBatchServicePort {
+  listBatches(): Promise<ServiceResult<EvaluationBatch[]>>
+  listTracePackages(batchId?: string): Promise<ServiceResult<TraceEvaluationPackage[]>>
+  createEvaluationJob(batchId: string, traceIds?: string[]): Promise<ServiceResult<EvaluationJob>>
+}
+export interface RoutingServicePort { listFindings(traceId?: string): Promise<ServiceResult<EvaluationFinding[]>>; listDeliveries(traceId?: string): Promise<ServiceResult<RoutingDelivery[]>> }
 
 export interface TraceServicePort { getTrace(traceId: string): Promise<ServiceResult<TraceRecord>> }
 export interface EvaluationServicePort { run(caseId: string, evaluationType: 'PROCESS'): Promise<ServiceResult<ProcessEval[]>>; run(caseId: string, evaluationType: 'OUTCOME'): Promise<ServiceResult<OutcomeEval[]>> }
@@ -21,6 +27,8 @@ export interface EvolutionServiceAdapters {
   experiment: ExperimentServicePort
   generationPlanning: GenerationPlanningServicePort
   release: ReleaseServicePort
+  evaluationBatches?: EvaluationBatchServicePort
+  routing?: RoutingServicePort
 }
 
 const mockResult = <T>(label: string, data: T): ServiceResult<T> => ({ provider: 'LOCAL_MOCK', isMock: true, label, data })
@@ -68,12 +76,33 @@ export function createLocalReleaseAdapter(getState: () => EvolutionState): Relea
   return { async publish(releaseId) { requireRecord(getState().releases, releaseId, 'Release'); return mockResult('本地 Mock Release Service 适配器', { releaseId, status: 'PENDING' as const }) } }
 }
 
+export function createLocalEvaluationBatchAdapter(getState: () => EvolutionState, idFactory = () => `job-local-${Date.now()}`): EvaluationBatchServicePort {
+  return {
+    async listBatches() { return mockResult('本地 Mock Evaluation Batch Repository', clone(getState().evaluationBatches)) },
+    async listTracePackages(batchId) { return mockResult('本地 Mock Trace Evaluation Ledger Repository', clone(getState().tracePackages.filter((item) => !batchId || item.batchId === batchId))) },
+    async createEvaluationJob(batchId, traceIds) {
+      const state = getState(); const batch = requireRecord(state.evaluationBatches, batchId, 'EvaluationBatch')
+      const job: EvaluationJob = { id: idFactory(), batchId, attempt: Math.max(0, ...state.evaluationJobs.filter((item) => item.batchId === batchId).map((item) => item.attempt)) + 1, status: 'QUEUED', traceIds: traceIds?.length ? traceIds : [...batch.traceIds], processedTraceIds: [], failedTraceIds: [], evalAgentVersion: batch.evalAgentVersion, rubricVersion: batch.rubricVersion, runEnvironment: batch.runEnvironment, configurationSnapshot: { source: 'local-mock-repository' }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+      return mockResult('本地 Mock Evaluation Job Repository', clone(job))
+    }
+  }
+}
+
+export function createLocalRoutingAdapter(getState: () => EvolutionState): RoutingServicePort {
+  return {
+    async listFindings(traceId) { return mockResult('本地 Mock Evaluation Finding Repository', clone(getState().evaluationFindings.filter((item) => !traceId || item.traceId === traceId))) },
+    async listDeliveries(traceId) { return mockResult('本地 Mock Routing Delivery Repository', clone(getState().routingDeliveries.filter((item) => !traceId || item.traceId === traceId))) }
+  }
+}
+
 export function createLocalEvolutionServices(getState: () => EvolutionState, replacements: Partial<EvolutionServiceAdapters> = {}): EvolutionServiceAdapters {
   return {
     trace: replacements.trace ?? createLocalTraceAdapter(getState),
     evaluation: replacements.evaluation ?? createLocalEvaluationAdapter(getState),
     experiment: replacements.experiment ?? createLocalExperimentAdapter(getState),
     generationPlanning: replacements.generationPlanning ?? createLocalGenerationPlanningAdapter(getState),
-    release: replacements.release ?? createLocalReleaseAdapter(getState)
+    release: replacements.release ?? createLocalReleaseAdapter(getState),
+    evaluationBatches: replacements.evaluationBatches ?? createLocalEvaluationBatchAdapter(getState),
+    routing: replacements.routing ?? createLocalRoutingAdapter(getState)
   }
 }

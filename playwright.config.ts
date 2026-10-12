@@ -9,6 +9,7 @@ const serverPort = Number(serverAddress?.[2] ?? 4174)
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
+  workers: 1,
   reporter: 'list',
   use: {
     baseURL,
