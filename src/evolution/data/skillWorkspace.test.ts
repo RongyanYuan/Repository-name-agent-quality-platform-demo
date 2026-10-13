@@ -77,6 +77,11 @@ describe('fixed-version Skill workspace', () => {
   })
   it('keeps completed governance history but excludes its attribution from active work', () => {
     const state = createInitialEvolutionData()
+    // This completed-history fixture deliberately has no later reopened work.
+    state.evaluationFindings = state.evaluationFindings.filter(item => !item.id.includes('governance-demo') && !item.id.includes('module-path-demo'))
+    state.attributions = state.attributions.filter(item => !item.id.includes('governance-demo') && !item.id.includes('module-path-demo'))
+    state.issues = state.issues.filter(item => !item.id.includes('governance-demo') && !item.id.includes('module-path-demo'))
+    state.variants = state.variants.filter(item => !item.id.includes('governance-demo') && !item.id.includes('module-path-demo'))
     state.datasets = [{ ...state.datasets[0], targets: [{ skillId: 'skill-ppt-builder', skillVersion: '2.5.0', evolutionItemId: 'skill-sop' }] }]
     state.experiments = [{ ...state.experiments[0], targets: state.datasets[0].targets, datasetIds: [state.datasets[0].id], gateDecisionId: 'latest-reject' }]
     state.gateDecisions = [{ ...state.gateDecisions[0], id: 'latest-reject', experimentId: state.experiments[0].id, conclusion: 'REJECT' }]

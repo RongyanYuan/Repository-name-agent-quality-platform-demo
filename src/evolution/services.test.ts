@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createInitialEvolutionData } from './data'
 import { createLocalEvolutionServices, type EvolutionServiceAdapters } from './services'
+import { resolveIdentity } from './identity'
 
 describe('local evolution service adapters', () => {
   const state = createInitialEvolutionData()
@@ -11,7 +12,7 @@ describe('local evolution service adapters', () => {
     const trace = await services.trace.getTrace('trace-ppt-generate')
     const evaluation = await services.evaluation.run('case-ppt-management', 'OUTCOME')
 
-    expect(trace).toMatchObject({ provider: 'LOCAL_MOCK', isMock: true, data: { trace: { id: 'trace-ppt-generate' } } })
+    expect(trace).toMatchObject({ provider: 'LOCAL_MOCK', isMock: true, data: { trace: { id: resolveIdentity(state, 'trace', 'trace-ppt-generate') } } })
     expect(trace.data.observations.map((item) => item.id)).toEqual(['obs-ppt-skill', 'obs-ppt-artifact'])
     expect(evaluation.data.map((item) => item.id)).toEqual(['outcome-eval-ppt-style'])
     expect(evaluation.label).toContain('Mock')
@@ -24,7 +25,7 @@ describe('local evolution service adapters', () => {
     result.data.trace.status = 'FAILED'
     result.data.observations[0].output = '被调用方改写'
 
-    expect(state.traces.find((item) => item.id === 'trace-ppt-generate')?.status).toBe('SUCCEEDED')
+    expect(state.traces.find((item) => item.id === resolveIdentity(state, 'trace', 'trace-ppt-generate'))?.status).toBe('SUCCEEDED')
     expect(state.observations.find((item) => item.id === 'obs-ppt-skill')?.output).not.toBe('被调用方改写')
   })
 
@@ -70,5 +71,19 @@ describe('local evolution service adapters', () => {
     expect((await services.experiment.start('exp-single-ppt-routing')).provider).toBe('LOCAL_MOCK')
     expect((await services.generationPlanning.plan({ name: '本地计划' })).provider).toBe('LOCAL_MOCK')
     expect((await services.release.publish('release-agent-2-5-0')).provider).toBe('LOCAL_MOCK')
+  })
+
+  it('resolves legacy Trace IDs at routing and job adapter boundaries and returns canonical references', async () => {
+    const services = createLocalEvolutionServices(() => state)
+    const canonical = resolveIdentity(state, 'trace', 'trace-ppt-generate')
+    const findings = (await services.routing!.listFindings('trace-ppt-generate')).data
+    const deliveries = (await services.routing!.listDeliveries('trace-ppt-generate')).data
+    expect(findings.length).toBeGreaterThan(0)
+    expect(deliveries.length).toBeGreaterThan(0)
+    expect(findings.every(item => item.traceId === canonical)).toBe(true)
+    expect(deliveries.every(item => item.traceId === canonical)).toBe(true)
+    const job = (await services.evaluationBatches!.createEvaluationJob('batch-completed-005', ['trace-ppt-generate'])).data
+    expect(job.traceIds).toEqual([canonical])
+    await expect(services.evaluationBatches!.createEvaluationJob('batch-completed-005', ['trace-does-not-exist'])).rejects.toThrow(/不存在/)
   })
 })

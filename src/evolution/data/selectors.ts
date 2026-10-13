@@ -3,6 +3,7 @@ import type {
   EvolutionState, GateDecision, Issue, ModuleEvaluationScore, ReleaseVersion, RoutingDelivery, SkillCategory,
   TraceEvaluationPackage, Variant
 } from '../domain'
+import { aliasesForIdentity, resolveIdentity } from '../identity'
 
 export type FunnelUnit = 'Case' | '问题' | '变体' | '实验' | '决策'
 export interface FunnelStep { id: string; label: string; count: number; unit: FunnelUnit; detailIds: string[] }
@@ -188,7 +189,7 @@ export interface EvolutionFilters {
 export function selectFilteredCases(state: EvolutionState, filters: EvolutionFilters): Case[] {
   const query = filters.query?.trim().toLowerCase()
   return state.cases.filter((item) => {
-    if (query && ![item.id, item.sessionId, item.query, item.title, ...item.traceIds].some((value) => value.toLowerCase().includes(query))) return false
+    if (query && ![item.id, item.sessionId, item.query, item.title, ...item.traceIds, ...aliasesForIdentity(state, 'session', item.sessionId), ...item.traceIds.flatMap(id => aliasesForIdentity(state, 'trace', id))].some((value) => value.toLowerCase().includes(query))) return false
     if (filters.environment && filters.environment !== 'All' && item.environment !== filters.environment) return false
     if (filters.scenario && filters.scenario !== 'All' && item.scenario !== filters.scenario) return false
     if (filters.skillId && filters.skillId !== 'All' && !item.skillIds.includes(filters.skillId)) return false
@@ -348,10 +349,10 @@ const badcaseStatusForPackage = (state: EvolutionState, record: TraceEvaluationP
   const items = (state.algorithmBadcases ?? []).filter((item) => record.badcaseIds.includes(item.id))
   return items.length ? (items.find((item) => item.status === 'CONFIRMED')?.status ?? items[0].status) : 'NONE'
 }
-const includesQuery = (record: TraceLedgerRow, query?: string) => {
+const includesQuery = (state: EvolutionState, record: TraceLedgerRow, query?: string) => {
   const normalized = query?.trim().toLowerCase()
   if (!normalized) return true
-  return [record.package.id, record.package.traceId, record.package.caseId, record.package.sessionId, record.query, record.package.agentVersion, record.package.skillVersion ?? ''].some((value) => value.toLowerCase().includes(normalized))
+  return [record.package.id, record.package.traceId, record.package.caseId, record.package.sessionId, record.query, record.package.agentVersion, record.package.skillVersion ?? '', ...aliasesForIdentity(state, 'trace', record.package.traceId), ...aliasesForIdentity(state, 'session', record.package.sessionId)].some((value) => value.toLowerCase().includes(normalized))
 }
 
 export function selectTraceEvaluationLedger(state: EvolutionState, filters: TraceLedgerFilters = {}): TraceLedgerRow[] {
@@ -368,11 +369,11 @@ export function selectTraceEvaluationLedger(state: EvolutionState, filters: Trac
       badcaseStatus: badcaseStatusForPackage(state, record), owner: record.owner ?? caseRecord?.owner
     }
   }).filter((row) => {
-    if (!includesQuery(row, filters.query)) return false
+    if (!includesQuery(state, row, filters.query)) return false
     if (filters.batchId && filters.batchId !== 'All' && row.package.batchId !== filters.batchId) return false
     if (filters.caseId && filters.caseId !== 'All' && row.package.caseId !== filters.caseId) return false
-    if (filters.sessionId && filters.sessionId !== 'All' && row.package.sessionId !== filters.sessionId) return false
-    if (filters.traceId && filters.traceId !== 'All' && row.package.traceId !== filters.traceId) return false
+    if (filters.sessionId && filters.sessionId !== 'All' && row.package.sessionId !== resolveIdentity(state, 'session', filters.sessionId)) return false
+    if (filters.traceId && filters.traceId !== 'All' && row.package.traceId !== resolveIdentity(state, 'trace', filters.traceId)) return false
     if (filters.agentVersion && filters.agentVersion !== 'All' && row.package.agentVersion !== filters.agentVersion) return false
     if (filters.skillVersion && filters.skillVersion !== 'All' && row.package.skillVersion !== filters.skillVersion) return false
     if (filters.skillCategory && filters.skillCategory !== 'All' && row.package.skillCategory !== filters.skillCategory) return false
@@ -388,7 +389,8 @@ export function selectTraceEvaluationLedger(state: EvolutionState, filters: Trac
 }
 
 export function selectModuleEvaluationSummary(state: EvolutionState, traceId: string): ModuleEvaluationScore[] {
-  return (state.tracePackages ?? []).find((item) => item.traceId === traceId)?.moduleScores ?? []
+  const canonical = resolveIdentity(state, 'trace', traceId)
+  return (state.tracePackages ?? []).find((item) => item.traceId === canonical)?.moduleScores ?? []
 }
 
 export interface FiveStateModuleSummary {
@@ -421,7 +423,8 @@ export function selectFirstNonDerivedFailure(record: TraceEvaluationPackage | un
 }
 
 export function selectEvidenceCompleteness(state: EvolutionState, traceId: string): TraceLedgerRow['evidenceCompleteness'] {
-  const record = (state.tracePackages ?? []).find((item) => item.traceId === traceId)
+  const canonical = resolveIdentity(state, 'trace', traceId)
+  const record = (state.tracePackages ?? []).find((item) => item.traceId === canonical)
   return record ? evidenceCompletenessForPackage(record) : 'MISSING'
 }
 
@@ -439,6 +442,12 @@ export function selectRoutingQueue(state: EvolutionState, queueId: string): Rout
   return { queue, deliveryIds, itemIds, deliveries: (state.routingDeliveries ?? []).filter((item) => deliveryIds.includes(item.id)), badcases: (state.algorithmBadcases ?? []).filter((item) => itemIds.includes(item.id)) }
 }
 
-export const selectRoutingDeliveries = (state: EvolutionState, filters: { destination?: RoutingDelivery['destination']; status?: RoutingDelivery['status']; traceId?: string } = {}): RoutingDelivery[] => (state.routingDeliveries ?? []).filter((item) => (!filters.destination || item.destination === filters.destination) && (!filters.status || item.status === filters.status) && (!filters.traceId || item.traceId === filters.traceId))
+export const selectRoutingDeliveries = (state: EvolutionState, filters: { destination?: RoutingDelivery['destination']; status?: RoutingDelivery['status']; traceId?: string } = {}): RoutingDelivery[] => {
+  const canonical = filters.traceId ? resolveIdentity(state, 'trace', filters.traceId) : undefined
+  return (state.routingDeliveries ?? []).filter((item) => (!filters.destination || item.destination === filters.destination) && (!filters.status || item.status === filters.status) && (!canonical || item.traceId === canonical))
+}
 
-export const selectEvaluationFindingsForTrace = (state: EvolutionState, traceId: string): EvaluationFinding[] => (state.evaluationFindings ?? []).filter((item) => item.traceId === traceId)
+export const selectEvaluationFindingsForTrace = (state: EvolutionState, traceId: string): EvaluationFinding[] => {
+  const canonical = resolveIdentity(state, 'trace', traceId)
+  return (state.evaluationFindings ?? []).filter((item) => item.traceId === canonical)
+}

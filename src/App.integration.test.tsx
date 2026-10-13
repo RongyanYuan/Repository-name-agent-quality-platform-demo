@@ -5,6 +5,10 @@ import App, { REFERENCE_ROUTES } from './App'
 import { REFERENCE_KINDS } from './evolution/components/ViewPrimitives'
 import { EvolutionProvider } from './evolution/store'
 import { QualityProvider, useQuality } from './store'
+import { createInitialEvolutionData } from './evolution/data'
+import { resolveIdentity } from './evolution/identity'
+const identityState = createInitialEvolutionData()
+const canonical = (kind: 'trace'|'session', id:string) => resolveIdentity(identityState,kind,id)
 
 function LocationProbe() {
   const location = useLocation()
@@ -34,28 +38,37 @@ function QualityFilterProbe() {
 }
 
 describe('Office Agent self-evolution app integration', () => {
+  it('opens the non-primary Trace owning an Observation-only bookmark',async()=>{
+    clearEvolutionStorage()
+    renderApp('/cases?observationId=obs-ppt-memory&timeRange=30d')
+    const drawer=await screen.findByRole('dialog',{name:/Case 详情/})
+    expect(screen.getByRole('dialog',{name:'执行节点详情'})).toHaveTextContent('找到 artifact-sales.xlsx')
+    expect(drawer).toHaveTextContent(canonical('trace','trace-ppt-context'))
+    expect(within(screen.getByRole('dialog',{name:'执行节点详情'})).getByRole('button',{name:'obs-ppt-memory'})).toBeVisible()
+  })
   it('maps every typed reference kind and the compatibility alias to an owning route', () => {
     expect(Object.keys(REFERENCE_ROUTES).sort()).toEqual([...REFERENCE_KINDS, 'issue-cluster'].sort())
     expect(REFERENCE_ROUTES['issue-cluster']).toEqual(REFERENCE_ROUTES.cluster)
   })
-  it('renders the four primary governance destinations and the new brand', () => {
+  it('renders the five primary governance destinations and the new brand', () => {
     clearEvolutionStorage()
     renderApp()
 
     expect(screen.getByText('Office Agent')).toBeVisible()
     expect(screen.getByText('自进化治理平台')).toBeVisible()
-    expect(within(screen.getByRole('navigation', { name: '主导航' })).getAllByRole('link')).toHaveLength(4)
+    expect(within(screen.getByRole('navigation', { name: '主导航' })).getAllByRole('link')).toHaveLength(5)
     const primaryNav = within(screen.getByRole('navigation', { name: '主导航' }))
     expect(primaryNav.getByRole('link', { name: '治理总览' })).toHaveAttribute('href', '/overview')
     expect(primaryNav.getByRole('link', { name: 'Case / Trace 分析' })).toHaveAttribute('href', '/cases')
     expect(primaryNav.getByRole('link', { name: '数据集与评测' })).toHaveAttribute('href', '/datasets-evaluations')
+    expect(primaryNav.getByRole('link', { name: '资产管理' })).toHaveAttribute('href', '/assets-skills')
     expect(primaryNav.queryByRole('link', { name: '归因与问题簇' })).not.toBeInTheDocument()
     expect(primaryNav.queryByRole('link', { name: '能力变体' })).not.toBeInTheDocument()
     expect(primaryNav.queryByRole('link', { name: '实验与准出' })).not.toBeInTheDocument()
     expect(primaryNav.queryByRole('link', { name: '发布版本' })).not.toBeInTheDocument()
     expect(primaryNav.queryByRole('link', { name: '资产与 Skill' })).not.toBeInTheDocument()
     expect(primaryNav.getByRole('link', { name: '规则配置' })).toHaveAttribute('href', '/rules')
-    expect(screen.getAllByRole('heading', { name: '治理总览', level: 1 })).toHaveLength(2)
+    expect(screen.getAllByRole('heading', { name: '治理总览', level: 1 })).toHaveLength(1)
     expect(screen.getAllByText('Mock 演示数据').length).toBeGreaterThan(0)
   })
 
@@ -67,7 +80,7 @@ describe('Office Agent self-evolution app integration', () => {
       expect(screen.getByTestId('location')).toHaveTextContent('/cases?')
       expect(screen.getByTestId('location')).toHaveTextContent('timeRange=14d')
       expect(screen.getByTestId('location')).toHaveTextContent('environment=Production')
-      expect(screen.getByTestId('location')).toHaveTextContent('traceId=trace-ppt-generate')
+      expect(screen.getByTestId('location')).toHaveTextContent(`traceId=${canonical('trace','trace-ppt-generate')}`)
     })
     expect(screen.getByRole('dialog', { name: /Case 详情 · case-ppt-management/ })).toBeVisible()
   })
@@ -85,16 +98,17 @@ describe('Office Agent self-evolution app integration', () => {
     expect(screen.queryByRole('link', { name: 'Task / Trace' })).not.toBeInTheDocument()
   })
 
-  it('opens legacy anomaly monitoring as an explicit overview monitoring view', async () => {
+  it('maps legacy anomaly monitoring to the consolidated governance overview', async () => {
     clearEvolutionStorage()
     renderApp('/anomaly-monitoring?timeRange=7d&environment=Production')
     await waitFor(() => {
       expect(screen.getByTestId('location')).toHaveTextContent('/overview?')
-      expect(screen.getByTestId('location')).toHaveTextContent('view=monitoring')
       expect(screen.getByTestId('location')).toHaveTextContent('timeRange=7d')
       expect(screen.getByTestId('location')).toHaveTextContent('environment=Production')
     })
-    await waitFor(() => expect(screen.getByText(/线上监控视图/)).toBeVisible())
+    expect(screen.getByRole('heading', { name: '产物结果大盘' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '资产大盘' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '过程大盘' })).toBeVisible()
   })
 
   it('maps legacy Benchmark comparison links to the experiment context', async () => {
@@ -127,7 +141,7 @@ describe('Office Agent self-evolution app integration', () => {
     clearEvolutionStorage()
     renderApp('/cases?timeRange=30d&agentVersion=agent-2.5.0&businessType=Excel&environment=Production')
 
-    await waitFor(() => expect(screen.getByText(/1 个 Case/)).toBeVisible())
+    await waitFor(() => expect(screen.getByRole('table', {name:'Case / Trace 列表'})).toHaveTextContent('case-tool-export'))
     expect(screen.getByRole('table', { name: 'Case / Trace 列表' })).toHaveTextContent('case-tool-export')
     expect(screen.getByRole('table', { name: 'Case / Trace 列表' })).not.toHaveTextContent('case-ppt-management')
   })
@@ -176,7 +190,7 @@ describe('Office Agent self-evolution app integration', () => {
   ])('opens the %s owning context from a stable typed deep link', async (_kind, path, id) => {
     clearEvolutionStorage()
     const view = renderApp(`${path}&timeRange=30d`)
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(id))
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(_kind==='trace'||_kind==='session' ? canonical(_kind,id) : id))
     expect(document.querySelector('main')).toBeTruthy()
     view.unmount()
   })
@@ -195,8 +209,10 @@ describe('Office Agent self-evolution app integration', () => {
     fireEvent.click(await screen.findByRole('button', { name: '人工确认' }))
     fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: '集成人工复核记录' } })
     fireEvent.click(screen.getByRole('button', { name: '保存人工结论' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Close panel' }))
-    fireEvent.click(screen.getByRole('row', { name: /case-ppt-management/ }))
+    fireEvent.click(screen.getByRole('button', { name: '关闭 Case 详情' }))
+    fireEvent.click(screen.getAllByRole('row', { name: /case-ppt-management/ }).at(-1)!)
+    fireEvent.click(screen.getByRole('tab', {name:'Session 对话'}))
+    fireEvent.click(screen.getByText('Case 共享处理审计'))
 
     expect(await screen.findByText('集成人工复核记录')).toBeVisible()
     expect(JSON.parse(localStorage.getItem('office-agent-evolution-governance:v1') ?? '{}').state.auditTrail).toEqual(
@@ -214,6 +230,8 @@ describe('Office Agent self-evolution app integration', () => {
     first.unmount()
 
     renderApp('/cases?caseId=case-ppt-management&timeRange=30d')
+    fireEvent.click(await screen.findByRole('tab', {name:'Session 对话'}))
+    fireEvent.click(screen.getByText('Case 共享处理审计'))
     expect(await screen.findByText('跨重挂载人工复核记录')).toBeVisible()
   })
 
@@ -238,22 +256,25 @@ describe('Office Agent self-evolution app integration', () => {
     clearEvolutionStorage()
     renderApp('/cases?caseId=case-ppt-management&traceId=trace-ppt-context&observationId=obs-ppt-memory&timeRange=30d')
     const dialog = await screen.findByRole('dialog', { name: /Case 详情 · case-ppt-management/ })
-    expect(dialog).toHaveTextContent('trace-ppt-context')
-    expect(dialog).toHaveTextContent('obs-ppt-memory')
-    expect(within(dialog).getByRole('tab', { name: 'Trace 与 Evidence' })).toHaveAttribute('aria-selected', 'true')
+    expect(dialog).toHaveTextContent(canonical('trace','trace-ppt-context'))
+    expect(screen.getByRole('dialog',{name:'执行节点详情'})).toHaveTextContent('obs-ppt-memory')
+    expect(within(dialog).getByRole('tab', { name: '评测中心' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('switches a multi-Trace Case in detail while retaining Case and global scope', async () => {
     clearEvolutionStorage()
     renderApp('/cases?caseId=case-ppt-management&timeRange=30d&environment=Production')
-    fireEvent.click(await screen.findByRole('button', { name: '切换 Trace trace-ppt-context' }))
+    fireEvent.click(await screen.findByRole('button', { name: `切换 Trace ${canonical('trace','trace-ppt-context')}` }))
     await waitFor(() => {
       expect(screen.getByTestId('location')).toHaveTextContent('caseId=case-ppt-management')
-      expect(screen.getByTestId('location')).toHaveTextContent('traceId=trace-ppt-context')
+      expect(screen.getByTestId('location')).toHaveTextContent(`traceId=${canonical('trace','trace-ppt-context')}`)
       expect(screen.getByTestId('location')).toHaveTextContent('timeRange=30d')
       expect(screen.getByTestId('location')).toHaveTextContent('environment=Production')
     })
-    expect(screen.getByRole('dialog', { name: /Case 详情 · case-ppt-management/ })).toHaveTextContent('obs-ppt-memory')
+    expect(screen.getByRole('dialog', { name: /Case 详情 · case-ppt-management/ }).getAttribute('aria-labelledby')).toBeTruthy()
+    fireEvent.click(screen.getByRole('tab',{name:'评测中心'}))
+    fireEvent.click(screen.getByRole('button',{name:'查看执行节点'}))
+    expect(screen.getByRole('dialog',{name:'执行节点详情'})).toHaveTextContent('obs-ppt-memory')
   })
 
   it('revises only the explicitly selected attribution and preserves both histories', async () => {
@@ -301,7 +322,7 @@ describe('Office Agent self-evolution app integration', () => {
   it('uses the single global search field to filter Case / Trace records', async () => {
     clearEvolutionStorage()
     renderApp('/cases?timeRange=30d&environment=Production&search=case-ppt-management')
-    await waitFor(() => expect(screen.getByRole('row', { name: /case-ppt-management/ })).toBeVisible())
+    await waitFor(() => expect(screen.getAllByRole('row', { name: /case-ppt-management/ })).toHaveLength(2))
     expect(screen.getByRole('table', { name: 'Case / Trace 列表' })).not.toHaveTextContent('case-tool-export')
     expect(screen.queryByLabelText('Query')).not.toBeInTheDocument()
     expect(screen.getByLabelText('搜索 task_id、query、session_id、trace_id 或 skill_id')).toBeVisible()

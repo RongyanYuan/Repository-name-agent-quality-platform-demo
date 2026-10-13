@@ -1,13 +1,19 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
+import { useEffect, type ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
-import { QualityProvider } from '../../store'
+import { QualityProvider, useQuality } from '../../store'
 import { EvolutionProvider } from '../store'
 import { createInitialEvolutionData } from '../data'
 import { VariantsPage } from './VariantsPage'
 
+function FullHistoryScope({ children }: { children: ReactNode }) {
+  const { state, dispatch } = useQuality()
+  useEffect(() => { dispatch({ type: 'SET_FILTERS', filters: { timeRange: '30d' } }) }, [dispatch])
+  return state.filters.timeRange === '30d' ? children : null
+}
 function renderWorkbench(path = '/variants', props = {}) {
-  return render(<MemoryRouter initialEntries={[path]}><QualityProvider><EvolutionProvider initialState={createInitialEvolutionData()}><VariantsPage {...props} /></EvolutionProvider></QualityProvider></MemoryRouter>)
+  return render(<MemoryRouter initialEntries={[path]}><QualityProvider><FullHistoryScope><EvolutionProvider initialState={createInitialEvolutionData()}><VariantsPage {...props} /></EvolutionProvider></FullHistoryScope></QualityProvider></MemoryRouter>)
 }
 
 describe('unified Variant governance workspace', () => {

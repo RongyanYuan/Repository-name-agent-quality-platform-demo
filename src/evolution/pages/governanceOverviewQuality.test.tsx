@@ -1,48 +1,44 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, beforeEach } from 'vitest'
 import { QualityProvider } from '../../store'
 import { EvolutionProvider } from '../store'
 import { GovernanceOverviewPage } from './GovernanceOverviewPage'
 
-describe('治理总览四层质量指标', () => {
+describe('治理总览三个业务大盘', () => {
   beforeEach(() => localStorage.clear())
 
   const renderOverview = () => render(<MemoryRouter><QualityProvider><EvolutionProvider><GovernanceOverviewPage /></EvolutionProvider></QualityProvider></MemoryRouter>)
 
-  it('独立展示北极星、合格产物、过程效率和模块诊断四个 section', () => {
+  it('按产物、资产、过程顺序展示三个大盘，移除旧漏斗和重复质量层', () => {
     renderOverview()
-    expect(screen.getByRole('heading', { name: '用户满意度' })).toBeVisible()
-    expect(screen.getByRole('heading', { name: '合格产物' })).toBeVisible()
-    expect(screen.getByRole('heading', { name: '过程效率' })).toBeVisible()
-    expect(screen.getByRole('heading', { name: '模块诊断与首错归因' })).toBeVisible()
-    expect(screen.getByLabelText('用户满意度 7 日趋势')).toBeVisible()
+    expect(screen.getAllByRole('heading', { level: 2 }).map(heading => heading.textContent)).toEqual(['产物结果大盘', '资产大盘', '过程大盘'])
+    for (const oldTitle of ['用户满意度', '合格产物', '模块诊断与首错归因', '进化漏斗', '批量评测覆盖与数据分流', '性能与安全原始信号']) {
+      expect(screen.queryByRole('heading', { name: oldTitle })).not.toBeInTheDocument()
+    }
+    expect(screen.getByText('Mock 演示数据')).toBeVisible()
   })
 
-  it('没有用户接受和过程业务阈值时不推论满意率或低效率', () => {
+  it('结果使用 0 / 1 / 2 分计数，并提供真实 QA 平台和资产管理入口', () => {
     renderOverview()
-    expect(screen.getByRole('button', { name: /用户满意度 UNKNOWN/ })).toHaveTextContent('待配置')
-    expect(screen.getByRole('button', { name: /最终用户接受/ })).not.toHaveTextContent('当前 Case 无标准化用户接受事件')
-    expect(screen.getByRole('button', { name: /过程效率不符业务预期率 UNKNOWN/ })).toHaveTextContent('分母')
-    expect(screen.getByText(/用户接受信号未在 Case 中记录/)).toBeVisible()
-    expect(screen.getByText(/业务预期未配置/)).toBeVisible()
+    for (const label of ['总 Case 数', '有产物结果的 Case', '0 分', '1 分', '2 分', '采纳率']) expect(screen.getByText(label, { exact: true })).toBeVisible()
+    expect(screen.queryByText(/GSB/)).not.toBeInTheDocument()
+    const qa = screen.getByRole('link', { name: '前往 QA 平台' })
+    expect(qa).toHaveAttribute('href', 'https://autoeval.baidu-int.com/tasks')
+    expect(qa).toHaveAttribute('target', '_blank')
+    expect(screen.getByRole('link', { name: '查看资产管理' })).toHaveAttribute('href', expect.stringContaining('/assets-skills'))
   })
 
-  it('每层子指标都可以收起并保留总指标', () => {
+  it('过程效率覆盖四类产物，质量使用 PRD 模块且上文不单独计分', () => {
     renderOverview()
-    const northStarToggle = screen.getByRole('button', { name: '收起用户满意度子指标' })
-    const qualifiedToggle = screen.getByRole('button', { name: '收起合格产物子指标' })
-    const processToggle = screen.getByRole('button', { name: '收起过程效率子指标' })
-    const moduleToggle = screen.getByRole('button', { name: '收起模块诊断子指标' })
-    expect(northStarToggle).toHaveAttribute('aria-expanded', 'true')
-    fireEvent.click(northStarToggle)
-    expect(northStarToggle).toHaveAttribute('aria-expanded', 'false')
-    fireEvent.click(qualifiedToggle)
-    fireEvent.click(processToggle)
-    fireEvent.click(moduleToggle)
-    expect(screen.getByRole('heading', { name: '用户满意度' })).toBeVisible()
-    expect(screen.getByRole('heading', { name: '合格产物' })).toBeVisible()
-    expect(screen.getByRole('heading', { name: '过程效率' })).toBeVisible()
-    expect(screen.getByRole('heading', { name: '模块诊断与首错归因' })).toBeVisible()
+    const efficiency = within(screen.getByRole('table', { name: '按产物类型的过程效率' }))
+    const quality = within(screen.getByRole('table', { name: '按产物类型的过程质量' }))
+    for (const type of ['PPT', 'Word', 'Excel', '生图']) {
+      expect(efficiency.getByRole('rowheader', { name: new RegExp(type) })).toBeVisible()
+      expect(quality.getByRole('columnheader', { name: type })).toBeVisible()
+    }
+    for (const module of ['记忆', 'skill', 'Reason', 'Act']) expect(quality.getByRole('row', { name: new RegExp(`^${module}\\s`) })).toBeVisible()
+    expect(quality.queryByRole('row', { name: /^上文\s|^上下文\s/ })).not.toBeInTheDocument()
+    expect(screen.getByText(/上文作为证据，不独立计分/)).toBeVisible()
   })
 })

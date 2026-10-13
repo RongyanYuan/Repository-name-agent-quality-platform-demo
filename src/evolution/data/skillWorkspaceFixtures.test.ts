@@ -3,6 +3,7 @@ import { createInitialEvolutionData } from '../data'
 import { validateEvolutionState } from './validation'
 import { upgradeMockFixtures } from './upgradeMockFixtures'
 import { governanceTracks } from './skillWorkspace'
+import { aliasesForIdentity, resolveIdentity } from '../identity'
 
 describe('fixed-version Skill workspace Mock fixtures', () => {
   it('provides canonical version catalogs while personal Skill generation stays planned', () => {
@@ -46,12 +47,13 @@ describe('fixed-version Skill workspace Mock fixtures', () => {
   it('records the original PPT source version so its historical attribution retains the original evidence and evaluations', () => {
     const state = createInitialEvolutionData()
     for (const traceId of ['trace-ppt-context', 'trace-ppt-generate']) {
-      expect(state.traces.find(trace => trace.id === traceId)?.skillVersion).toBe('2.5.0')
-      expect(state.tracePackages.find(pkg => pkg.traceId === traceId)?.skillVersion).toBe('2.5.0')
+      const canonical = resolveIdentity(state, 'trace', traceId)
+      expect(state.traces.find(trace => trace.id === canonical)?.skillVersion).toBe('2.5.0')
+      expect(state.tracePackages.find(pkg => pkg.traceId === canonical)?.skillVersion).toBe('2.5.0')
     }
     const oldTrack = governanceTracks(state, { skillId: 'skill-ppt-builder', skillVersion: '2.5.0', attribution: 'skill-sop' })[0]
     expect(oldTrack.caseIds).toContain('case-ppt-management')
-    expect(oldTrack.traceIds).toContain('trace-ppt-generate')
+    expect(oldTrack.traceIds).toContain(resolveIdentity(state, 'trace', 'trace-ppt-generate'))
     expect(oldTrack.attributionIds).toContain('attribution-skill-recall')
     expect(oldTrack.evidenceIds).toContain('evidence-ppt-recall')
     expect(state.processEvals.filter(evaluation => oldTrack.traceIds.includes(evaluation.traceId)).map(evaluation => evaluation.id)).toContain('process-eval-ppt-recall')
@@ -63,33 +65,34 @@ describe('fixed-version Skill workspace Mock fixtures', () => {
     const seed = createInitialEvolutionData()
     const previous = structuredClone(seed)
     previous.seedVersion = 'office-agent-governance-demo-2.4.0'
-    previous.traces.filter(trace => ['trace-ppt-context', 'trace-ppt-generate', 'trace-tool-export', 'trace-multi-route', 'trace-v2-05'].includes(trace.id)).forEach(trace => { delete trace.skillVersion })
-    previous.tracePackages.filter(pkg => ['trace-ppt-context', 'trace-ppt-generate', 'trace-tool-export', 'trace-multi-route', 'trace-v2-05'].includes(pkg.traceId)).forEach(pkg => { delete pkg.skillVersion })
-    const preserved = previous.tracePackages.find(pkg => pkg.traceId === 'trace-ppt-generate')!.moduleScores[0]
+    const historicalIds = ['trace-ppt-context', 'trace-ppt-generate', 'trace-tool-export', 'trace-multi-route', 'trace-v2-05'].map(id => resolveIdentity(previous, 'trace', id))
+    previous.traces.filter(trace => historicalIds.includes(trace.id)).forEach(trace => { delete trace.skillVersion })
+    previous.tracePackages.filter(pkg => historicalIds.includes(pkg.traceId)).forEach(pkg => { delete pkg.skillVersion })
+    const preserved = previous.tracePackages.find(pkg => pkg.traceId === resolveIdentity(previous, 'trace', 'trace-ppt-generate'))!.moduleScores[0]
     preserved.humanScore = 1.25; preserved.humanNote = '保留人工证据确认'
     const frozenReports = structuredClone(previous.gateDecisions)
     const frozenConfigs = structuredClone(previous.experiments.map(experiment => experiment.configSnapshot))
     const migrated = upgradeMockFixtures(previous, seed, '2026-09-30T11:00:00.000Z', 'historical-source-versions')
-    expect(migrated.traces.find(trace => trace.id === 'trace-ppt-generate')?.skillVersion).toBe('2.5.0')
-    expect(migrated.tracePackages.find(pkg => pkg.traceId === 'trace-ppt-generate')).toMatchObject({ skillVersion: '2.5.0', moduleScores: expect.arrayContaining([expect.objectContaining({ humanScore: 1.25, humanNote: '保留人工证据确认' })]) })
-    expect(migrated.traces.find(trace => trace.id === 'trace-tool-export')?.skillVersion).toBe('2.5.0')
-    expect(migrated.traces.find(trace => trace.id === 'trace-multi-route')?.skillVersion).toBeUndefined()
-    expect(migrated.tracePackages.find(pkg => pkg.traceId === 'trace-multi-route')?.skillVersion).toBeUndefined()
-    expect(migrated.traces.find(trace => trace.id === 'trace-v2-05')?.skillVersion).toBeUndefined()
-    expect(migrated.tracePackages.find(pkg => pkg.traceId === 'trace-v2-05')?.skillVersion).toBeUndefined()
+    expect(migrated.traces.find(trace => trace.id === resolveIdentity(migrated, 'trace', 'trace-ppt-generate'))?.skillVersion).toBe('2.5.0')
+    expect(migrated.tracePackages.find(pkg => pkg.traceId === resolveIdentity(migrated, 'trace', 'trace-ppt-generate'))).toMatchObject({ skillVersion: '2.5.0', moduleScores: expect.arrayContaining([expect.objectContaining({ humanScore: 1.25, humanNote: '保留人工证据确认' })]) })
+    expect(migrated.traces.find(trace => trace.id === resolveIdentity(migrated, 'trace', 'trace-tool-export'))?.skillVersion).toBe('2.5.0')
+    expect(migrated.traces.find(trace => trace.id === resolveIdentity(migrated, 'trace', 'trace-multi-route'))?.skillVersion).toBeUndefined()
+    expect(migrated.tracePackages.find(pkg => pkg.traceId === resolveIdentity(migrated, 'trace', 'trace-multi-route'))?.skillVersion).toBeUndefined()
+    expect(migrated.traces.find(trace => trace.id === resolveIdentity(migrated, 'trace', 'trace-v2-05'))?.skillVersion).toBeUndefined()
+    expect(migrated.tracePackages.find(pkg => pkg.traceId === resolveIdentity(migrated, 'trace', 'trace-v2-05'))?.skillVersion).toBeUndefined()
     expect(migrated.gateDecisions).toEqual(frozenReports)
     expect(migrated.experiments.map(experiment => experiment.configSnapshot)).toEqual(frozenConfigs)
-    previous.traces.find(trace => trace.id === 'trace-ppt-generate')!.skillVersion = '9.9.9-user-recorded'
-    previous.tracePackages.find(pkg => pkg.traceId === 'trace-ppt-generate')!.skillVersion = '9.9.9-user-recorded'
+    previous.traces.find(trace => trace.id === resolveIdentity(previous, 'trace', 'trace-ppt-generate'))!.skillVersion = '9.9.9-user-recorded'
+    previous.tracePackages.find(pkg => pkg.traceId === resolveIdentity(previous, 'trace', 'trace-ppt-generate'))!.skillVersion = '9.9.9-user-recorded'
     const edited = upgradeMockFixtures(previous, seed, '2026-09-30T12:00:00.000Z', 'preserve-version')
-    expect(edited.traces.find(trace => trace.id === 'trace-ppt-generate')?.skillVersion).toBe('9.9.9-user-recorded')
-    expect(edited.tracePackages.find(pkg => pkg.traceId === 'trace-ppt-generate')?.skillVersion).toBe('9.9.9-user-recorded')
+    expect(edited.traces.find(trace => trace.id === resolveIdentity(edited, 'trace', 'trace-ppt-generate'))?.skillVersion).toBe('9.9.9-user-recorded')
+    expect(edited.tracePackages.find(pkg => pkg.traceId === resolveIdentity(edited, 'trace', 'trace-ppt-generate'))?.skillVersion).toBe('9.9.9-user-recorded')
   })
 
   it('keeps the Tool fix source at its baseline version while candidate history and current release stay intact', () => {
     const state = createInitialEvolutionData()
-    expect(state.traces.find(trace => trace.id === 'trace-tool-export')?.skillVersion).toBe('2.5.0')
-    expect(state.tracePackages.find(pkg => pkg.traceId === 'trace-tool-export')?.skillVersion).toBe('2.5.0')
+    expect(state.traces.find(trace => trace.id === resolveIdentity(state, 'trace', 'trace-tool-export'))?.skillVersion).toBe('2.5.0')
+    expect(state.tracePackages.find(pkg => pkg.traceId === resolveIdentity(state, 'trace', 'trace-tool-export'))?.skillVersion).toBe('2.5.0')
     expect(state.datasets.find(dataset => dataset.id === 'dataset-spreadsheet-regression')?.targets).toEqual([expect.objectContaining({ skillId: 'skill-spreadsheet', skillVersion: '2.5.0', attributionId: 'act-failed' })])
     expect(state.experiments.find(experiment => experiment.id === 'exp-single-tool-retry')).toMatchObject({ baselineVersion: 'spreadsheet-2.5.0', candidateVersion: 'spreadsheet-2.5.1', targets: [expect.objectContaining({ skillVersion: '2.5.0' })] })
     expect(state.skills.find(skill => skill.id === 'skill-spreadsheet')?.version).toBe('2.5.1')
@@ -104,7 +107,8 @@ describe('fixed-version Skill workspace Mock fixtures', () => {
     const state = createInitialEvolutionData()
     const candidate = state.variants.find(variant => variant.id === 'variant-workspace-taste-100rc-recall')!
     expect(candidate).toMatchObject({ status: 'DRAFT', experimentIds: [] })
-    const findings = state.evaluationFindings.filter(finding => finding.traceId.startsWith('trace-workspace-taste-100rc-recall-'))
+    const findings = state.evaluationFindings.filter(finding => aliasesForIdentity(state, 'trace', finding.traceId).some(id => id.startsWith('trace-workspace-taste-100rc-recall-')))
+    expect(findings.length).toBeGreaterThan(0)
     expect(findings.every(finding => finding.preferenceSignalId === undefined && !finding.description.includes('1000'))).toBe(true)
     expect(state.tastePreferenceSignals[0]).toMatchObject({ populationTotal: 1000, preferenceCount: 950 })
     expect(state.issueClusters.find(cluster => cluster.id === 'cluster-taste-red-ready')?.currentCount).toBe(120)

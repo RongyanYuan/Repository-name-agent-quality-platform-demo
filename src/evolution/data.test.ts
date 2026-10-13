@@ -2,13 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { createInitialEvolutionData, initialEvolutionData } from './data'
 import { selectCaseLineage, selectEvolutionFunnel, selectEvolutionMonitoring, selectMonitoringCaseIds, selectMonitoringDrilldown, selectOverviewCaseMetrics, selectReleaseLineage } from './data/selectors'
 import { validateEvolutionState } from './data/validation'
+import { resolveIdentity } from './identity'
 
 describe('evolution demo data', () => {
   it('returns the exact contributing Case IDs for every monitoring signal', () => {
     const state = createInitialEvolutionData()
     expect(selectMonitoringCaseIds(state, 'risk')).toEqual(['case-multi-route'])
     expect(selectMonitoringCaseIds(state, 'commercial')).toEqual(['case-tool-export'])
-    expect(selectMonitoringDrilldown(state, 'commercial')).toEqual({ caseIds: ['case-tool-export'], traceIds: ['trace-tool-export'] })
+    expect(selectMonitoringDrilldown(state, 'commercial')).toEqual({ caseIds: ['case-tool-export'], traceIds: [resolveIdentity(state, 'trace', 'trace-tool-export')] })
     expect(new Set(selectMonitoringCaseIds(state, 'tool-frequency'))).toEqual(new Set(['case-ppt-management', 'case-tool-export', 'case-multi-route']))
     expect(new Set(selectMonitoringCaseIds(state, 'latency'))).toEqual(new Set(state.traces.map((trace) => trace.caseId)))
   })
@@ -211,15 +212,16 @@ describe('evolution demo data', () => {
         return
       }
       const caseIds = [...new Set(runs.map((run) => run.caseId))].sort()
-      expect(caseIds).toEqual(expectedCases)
+      expect(caseIds).toEqual(experiment.id.includes('governance-demo') ? ['case-governance-demo-ppt'] : experiment.id.includes('module-path-demo') ? ['case-ppt-management'] : expectedCases)
       expect(new Set(runs.map((run) => run.configHash))).toHaveLength(1)
       expect(new Set(experiment.runIds)).toEqual(new Set(runs.map((run) => run.id)))
 
       caseIds.forEach((caseId) => {
         const baseline = runs.filter((run) => run.caseId === caseId && run.arm === 'BASELINE')
         const candidate = runs.filter((run) => run.caseId === caseId && run.arm === 'CANDIDATE')
-        expect(baseline.map((run) => run.repetition).sort()).toEqual([1, 2, 3])
-        expect(candidate.map((run) => run.repetition).sort()).toEqual([1, 2, 3])
+        const repetitions = Array.from({ length: experiment.configSnapshot.repeatCount }, (_, index) => index + 1)
+        expect(baseline.map((run) => run.repetition).sort((left, right) => left - right)).toEqual(repetitions)
+        expect(candidate.map((run) => run.repetition).sort((left, right) => left - right)).toEqual(repetitions)
       })
     })
   })
@@ -257,13 +259,13 @@ describe('evolution demo data', () => {
 
   it('records ordered Session turns and the complete online telemetry contract', () => {
     const state = createInitialEvolutionData()
-    const management = state.sessions.find((item) => item.id === 'session-ppt-management')!
+    const management = state.sessions.find((item) => item.id === resolveIdentity(state, 'session', 'session-ppt-management'))!
 
     expect(management.turns.map((turn) => [turn.sequence, turn.role, turn.caseId, turn.traceId])).toEqual([
-      [1, 'USER', 'case-ppt-management', 'trace-ppt-context'],
-      [2, 'AGENT', 'case-ppt-management', 'trace-ppt-context'],
-      [3, 'USER', 'case-ppt-management', 'trace-ppt-generate'],
-      [4, 'AGENT', 'case-ppt-management', 'trace-ppt-generate']
+      [1, 'USER', 'case-ppt-management', resolveIdentity(state, 'trace', 'trace-ppt-context')],
+      [2, 'AGENT', 'case-ppt-management', resolveIdentity(state, 'trace', 'trace-ppt-context')],
+      [3, 'USER', 'case-ppt-management', resolveIdentity(state, 'trace', 'trace-ppt-generate')],
+      [4, 'AGENT', 'case-ppt-management', resolveIdentity(state, 'trace', 'trace-ppt-generate')]
     ])
     state.traces.forEach((trace) => expect(trace.telemetry).toMatchObject({
       totalLatencyMs: expect.any(Number), ttftMs: expect.any(Number), inputTokens: expect.any(Number), outputTokens: expect.any(Number),
@@ -337,8 +339,8 @@ describe('evolution demo data', () => {
     state.gateDecisions[0].reportSnapshot.runSnapshots = []
 
     const paths = validateEvolutionState(state).map((item) => item.path)
-    expect(paths).toContain('sessions.session-ppt-management.turns.0.traceId')
-    expect(paths).toContain('traces.trace-ppt-context.telemetry.cacheHitCount')
+    expect(paths).toContain(`sessions.${resolveIdentity(state, 'session', 'session-ppt-management')}.turns.0.traceId`)
+    expect(paths).toContain(`traces.${resolveIdentity(state, 'trace', 'trace-ppt-context')}.telemetry.cacheHitCount`)
     expect(paths).toContain('datasets.dataset-attribution.population')
     expect(paths).toContain('gateDecisions.gate-single-ppt-routing.reportSnapshot.runSnapshots')
   })

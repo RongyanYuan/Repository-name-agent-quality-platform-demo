@@ -3,6 +3,7 @@ import type { FilterState } from '../domain'
 import { useQuality } from '../store'
 import type { EvolutionState } from './domain'
 import { useEvolution } from './store'
+import { aliasesForIdentity } from './identity'
 
 const intersects = (values: string[], scope: Set<string>) => values.some((value) => scope.has(value))
 
@@ -24,7 +25,8 @@ export function scopeEvolutionState(state: EvolutionState, filters: FilterState)
     if (selectedSkill && !item.skillIds.some((id) => id.toLocaleLowerCase().includes(selectedSkill) || skillById.get(id)?.name.toLocaleLowerCase().includes(selectedSkill))) return false
     if (query) {
       const caseObservationLogIds = state.observations.filter((observation) => observation.caseId === item.id).map((observation) => observation.logId).filter((value): value is string => Boolean(value))
-      if (![item.id, item.sessionId, item.title, item.query, ...item.traceIds, ...item.skillIds, ...caseObservationLogIds].some((value) => value.toLocaleLowerCase().includes(query))) return false
+      const aliases = [...aliasesForIdentity(state,'session',item.sessionId), ...item.traceIds.flatMap(id=>aliasesForIdentity(state,'trace',id))]
+      if (![item.id, item.sessionId, item.title, item.query, ...item.traceIds, ...aliases, ...item.skillIds, ...caseObservationLogIds].some((value) => value.toLocaleLowerCase().includes(query))) return false
     }
     return true
   })
@@ -53,7 +55,11 @@ export function scopeEvolutionState(state: EvolutionState, filters: FilterState)
   const skillIds = new Set(cases.flatMap((item) => item.skillIds))
   const skills = filters.skill ? state.skills.filter((item) => skillIds.has(item.id)) : state.skills
   const assets = state.assets
-  const datasets = state.datasets.filter((item) => intersects(item.caseIds, caseIds))
+  // Keep the dataset catalog available for the Case/Trace filter dropdown.
+  // Exact Trace membership is applied by CaseAnalysisRecord.datasetRefs;
+  // removing catalog entries here would make valid datasets disappear merely
+  // because their local sample Case is outside the global quality scope.
+  const datasets = state.datasets
   const tracePackages = state.tracePackages.filter((item) => traceIds.has(item.traceId) || caseIds.has(item.caseId))
   const packageIds = new Set(tracePackages.map((item) => item.id))
   const evaluationBatches = state.evaluationBatches.filter((item) => item.traceIds.some((id) => traceIds.has(id)))
@@ -69,7 +75,7 @@ export function scopeEvolutionState(state: EvolutionState, filters: FilterState)
   const badcaseIds = new Set(algorithmBadcases.map((item) => item.id))
   const badcaseQueues = state.badcaseQueues.map((queue) => ({ ...queue, itemIds: queue.itemIds.filter((id) => badcaseIds.has(id)), deliveryIds: queue.deliveryIds.filter((id) => deliveryIds.has(id)) })).filter((queue) => queue.itemIds.length || queue.deliveryIds.length)
   const tastePreferenceSignals = state.tastePreferenceSignals.filter((signal) => signal.caseIds.some((id) => caseIds.has(id)) || cases.some((item) => item.skillIds.includes(signal.skillId)))
-  return { ...state, sessions, cases, traces, observations, evidence, artifacts, processEvals, outcomeEvals, attributions, issues, issueClusters, skills, assets, variants, datasets, experiments, experimentRuns, windows, gateDecisions, releases, evaluationBatches, evaluationJobs, tracePackages, evaluationFindings, routingPolicies: state.routingPolicies, routingDecisions, routingDeliveries, algorithmBadcases, badcaseQueues, tastePreferenceSignals }
+  return { ...state, sessions, cases, traces, observations, evidence, artifacts, processEvals, outcomeEvals, attributions, issues, issueClusters, skills, assets, variants, datasets, experiments, experimentRuns, windows, gateDecisions, releases, evaluationBatches, evaluationJobs, tracePackages, evaluationFindings, routingPolicies: state.routingPolicies, routingDecisions, routingDeliveries, algorithmBadcases, badcaseQueues, tastePreferenceSignals, assetCatalog: state.assetCatalog, assetVersions: state.assetVersions, assetPerformanceRecords: state.assetPerformanceRecords, assetEvolutionContributions: state.assetEvolutionContributions }
 }
 
 export function useScopedEvolution() {

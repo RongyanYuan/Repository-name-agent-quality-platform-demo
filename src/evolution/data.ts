@@ -11,8 +11,16 @@ import { ATTRIBUTION_TAXONOMY_VERSION, TRACE_MODULE_LABELS } from './domain'
 import { addScenarioFixtures } from './data/scenarioFixtures'
 import { addSkillWorkspaceFixtures } from './data/skillWorkspaceFixtures'
 import { evolutionItemId } from './taxonomy'
+import { canonicalizeSeedIdentityState } from './identity'
+import { enrichArtifactOutcomeFixtures } from './data/artifactOutcomeFixtures'
+import { enrichGovernanceGraphFixtures } from './data/governanceGraphFixtures'
+import { enrichTraceGovernanceFixtures } from './data/traceGovernanceFixtures'
+import { enrichModuleEvolutionFixtures } from './data/moduleEvolutionFixtures'
+import { enrichDatasetFilterFixtures } from './data/datasetFilterFixtures'
+import { enrichAssetManagementFixtures } from './data/assetManagement'
+import { enrichOverviewDashboardFixtures } from './data/overviewDashboardFixtures'
 
-export const EVOLUTION_SEED_VERSION = 'office-agent-governance-demo-2.4.1'
+export const EVOLUTION_SEED_VERSION = 'office-agent-governance-demo-2.7.4'
 export const EVOLUTION_SCHEMA_VERSION = 2
 const T0 = '2026-09-20T02:00:00.000Z'
 const T1 = '2026-09-21T04:00:00.000Z'
@@ -610,12 +618,15 @@ const makeState = (): EvolutionState => ({
   schemaVersion: EVOLUTION_SCHEMA_VERSION, seedVersion: EVOLUTION_SEED_VERSION, isMockData: true, updatedAt: T6,
   sessions: v2AllSessions, cases: v2AllCases, traces: v2AllTraces, observations: v2AllObservations, evidence: v2AllEvidence, artifacts: v2AllArtifacts, processEvals, outcomeEvals, attributions, issues, issueClusters,
   skills: allSkills, assets, variants, datasets, experiments, experimentRuns, windows, gateDecisions, releases, rules,
+  datasetSamplingSnapshots: [],
   evaluationBatches, evaluationJobs, tracePackages, evaluationFindings, routingPolicies, routingDecisions, routingDeliveries, algorithmBadcases, badcaseQueues, tastePreferenceSignals,
   auditTrail: [{ id: 'audit-seed-created', at: T0, actor: 'Demo Seeder', action: 'SEED_CREATED', entityType: 'EvolutionState', entityId: EVOLUTION_SEED_VERSION, reason: '创建结构化 Mock 演示数据；不代表真实线上指标。' }]
 })
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
-export const initialEvolutionData: EvolutionState = addSkillWorkspaceFixtures(addScenarioFixtures(makeState()))
+export const initialEvolutionData: EvolutionState = canonicalizeSeedIdentityState(enrichAssetManagementFixtures(enrichOverviewDashboardFixtures(enrichDatasetFilterFixtures(enrichModuleEvolutionFixtures(enrichArtifactOutcomeFixtures(enrichGovernanceGraphFixtures(enrichTraceGovernanceFixtures(addSkillWorkspaceFixtures(addScenarioFixtures(makeState()))))))))))
 export const createInitialEvolutionData = (): EvolutionState => clone(initialEvolutionData)
 /** Returns a fresh seed snapshot; persistence reset is provided by EvolutionRepository.reset. */
 export const resetEvolutionData = (): EvolutionState => createInitialEvolutionData()
+export { ASSET_CATALOG_KIND_LABELS, enrichAssetManagementFixtures, selectAssetCatalog, selectAssetEvolutionHistory, selectAssetMonthlyPerformance, selectAssetVersionMonthlyPerformance, selectAssetPerformance, selectAssetPerformanceSummaries, selectAssetVersions, validateAssetManagementState } from './data/assetManagement'
+export type { AssetManagementFilters, AssetMonthlyPerformance, AssetVersionMonthlyPerformance, AssetPerformanceSummary } from './data/assetManagement'

@@ -25,7 +25,7 @@ describe('Issue, Variant and Skill/Asset governance mutations', () => {
   it('persists a full Issue edit and phase-two processing chain across provider remounts', async () => {
     const repository = createLocalEvolutionRepository({ storage: window.localStorage, storageKey: `issue-edit-${Date.now()}` })
     repository.save(createInitialEvolutionData())
-    const first = render(<MemoryRouter><QualityProvider><EvolutionProvider repository={repository}><AttributionClustersPage initialIssueId="issue-reason-tool" /></EvolutionProvider></QualityProvider></MemoryRouter>)
+    const first = render(<MemoryRouter><QualityProvider><FullHistoryScope><EvolutionProvider repository={repository}><AttributionClustersPage initialIssueId="issue-reason-tool" /></EvolutionProvider></FullHistoryScope></QualityProvider></MemoryRouter>)
     fireEvent.click(screen.getByRole('button', { name: '编辑问题' }))
     fireEvent.change(screen.getByLabelText('问题描述'), { target: { value: '人工补充后的完整影响说明。' } })
     fireEvent.change(screen.getByLabelText('Owner'), { target: { value: '联合治理团队' } })
@@ -35,7 +35,7 @@ describe('Issue, Variant and Skill/Asset governance mutations', () => {
     fireEvent.click(screen.getByRole('button', { name: '保存问题' }))
     await waitFor(() => expect(repository.load().issues.find((item) => item.id === 'issue-reason-tool')).toMatchObject({ description: '人工补充后的完整影响说明。', owner: '联合治理团队', status: 'CLOSED' }))
     first.unmount()
-    render(<MemoryRouter><QualityProvider><EvolutionProvider repository={repository}><AttributionClustersPage initialIssueId="issue-reason-tool" /></EvolutionProvider></QualityProvider></MemoryRouter>)
+    render(<MemoryRouter><QualityProvider><FullHistoryScope><EvolutionProvider repository={repository}><AttributionClustersPage initialIssueId="issue-reason-tool" /></EvolutionProvider></FullHistoryScope></QualityProvider></MemoryRouter>)
     const detail = screen.getByRole('dialog', { name: '问题详情' })
     expect(detail).toHaveTextContent('人工补充后的完整影响说明。')
     expect(detail).toHaveTextContent('联合治理团队')

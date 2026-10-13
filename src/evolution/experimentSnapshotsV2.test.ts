@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { createInitialEvolutionData } from './data'
 import type { Experiment } from './domain'
 import { evolutionReducer } from './store'
+import { resolveIdentity } from './identity'
+import { automaticOutcomeRevisionId } from './outcomeReviews'
 
 const meta = { actor: '快照测试员', reason: '验证实验上下文冻结', at: '2026-09-30T10:00:00.000Z' }
 
@@ -20,6 +22,18 @@ const experimentFor = (state: ReturnType<typeof createInitialEvolutionData>): Ex
 }
 
 describe('V2 experiment context snapshots', () => {
+  it('keeps a later artifact-dimension review outside a created experiment snapshot', () => {
+    const state = createInitialEvolutionData()
+    const created = evolutionReducer(state, { type: 'CREATE_EXPERIMENT', experiment: experimentFor(state), meta })
+    const experiment = created.experiments.find(item => item.id === 'exp-freeze-context-test')!
+    const frozen = structuredClone(experiment.configSnapshot.evaluationSnapshot)
+    const evaluation = created.outcomeEvals.find(item => item.id === 'outcome-eval-ppt-style')!
+    const revised = evolutionReducer(created, { type: 'REVIEW_OUTCOME_DIMENSION', input: { traceId: evaluation.traceId, artifactId: evaluation.artifactId, evaluationId: evaluation.id, automaticRevisionId: automaticOutcomeRevisionId(evaluation), humanScore: 0, verdict: 'UNKNOWN', reason: '实验冻结后独立复核', reviewer: '快照测试员', reviewedAt: '2026-10-12T02:00:00Z', reviewId: 'outcome-after-experiment' }, meta })
+    expect(revised.experiments.find(item => item.id === experiment.id)?.configSnapshot.evaluationSnapshot).toEqual(frozen)
+    expect(revised.outcomeEvals.find(item => item.id === evaluation.id)?.revisions.at(-1)?.id).toBe('outcome-after-experiment')
+    const running = evolutionReducer(revised, { type: 'START_EXPERIMENT_RUN', experimentId: experiment.id, meta })
+    expect(running.experimentRuns.filter(item => item.experimentId === experiment.id).every(item => JSON.stringify(item.evalSnapshot) === JSON.stringify(frozen))).toBe(true)
+  })
   it('freezes evaluation, artifact, evidence and trace-package IDs when an experiment is created', () => {
     const state = createInitialEvolutionData()
     const created = evolutionReducer(state, { type: 'CREATE_EXPERIMENT', experiment: experimentFor(state), meta })
@@ -58,7 +72,7 @@ describe('V2 experiment context snapshots', () => {
   it('preserves Judge Reason, Rubric, root evidence and artifact content after later source edits', () => {
     const state = createInitialEvolutionData()
     const created = evolutionReducer(state, { type: 'CREATE_EXPERIMENT', experiment: experimentFor(state), meta })
-    const sourcePackage = created.tracePackages.find((item) => item.traceId === 'trace-ppt-generate')!
+    const sourcePackage = created.tracePackages.find((item) => item.traceId === resolveIdentity(created, 'trace', 'trace-ppt-generate'))!
     const sourceScore = sourcePackage.moduleScores.find((item) => item.moduleCode === 'SKILL')!
     const beforeReason = sourceScore.judgeReason
     const beforeRubric = sourceScore.evidence.rubricRule

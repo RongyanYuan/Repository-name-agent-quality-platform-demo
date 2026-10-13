@@ -1,0 +1,11 @@
+$ playwright test e2e/case-filter-window-dataset.spec.ts --output=/tmp/case-filter-browser-final4
+[WebServer] (node:45841) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:45849) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › e2e/case-filter-window-dataset.spec.ts:3:1 › Case / Trace 支持治理时间窗口与具体数据集两级筛选 (2.8s)
+
+  1 passed (4.3s)

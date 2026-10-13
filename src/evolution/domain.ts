@@ -30,7 +30,9 @@ export type SkillCategory = 'PRODUCTION_SKILL' | 'GENERAL' | 'PERSONAL_SKILL' | 
 export type TraceChannel = '小程序' | 'genflow pc 端' | 'genflow 垂类入口'
 export type VerticalScenario = 'PPT' | 'Word' | 'Excel' | '生图'
 export type UserAcceptanceStatus = 'ACCEPTED' | 'REJECTED' | 'UNKNOWN'
-export type DatasetPurpose = '原始归因集' | '同类泛化集' | '相邻及无关回归集' | '窗口线上数据全集' | '泛化集合' | '黄金集'
+export type DatasetPurpose = '原始归因集' | '同类泛化集' | '相邻及无关回归集' | '窗口线上数据全集' | '泛化集合' | '黄金集' | '自定义数据集'
+/** Top-level dataset ownership used by the Case / Trace dataset filter. */
+export type DatasetCategory = 'GATE' | 'GOLDEN' | 'PERSONAL'
 export interface EvolutionTarget {
   skillId: Id
   skillVersion?: string
@@ -39,6 +41,24 @@ export interface EvolutionTarget {
   attributionId?: string
   /** Compatibility field for old persisted targets. */
   evolutionItemId: string
+}
+/** Explicit governance scope; module targets never borrow a Skill's version. */
+export type EvolutionTargetIdentity =
+  | { kind: 'SKILL'; governanceObject: 'Skill'; skillId: Id; skillVersion: string; attributionId: string }
+  | { kind: 'MODULE'; governanceObject: 'Memory' | 'Reason' | 'Act' | 'Context' | 'OTHER_BADCASE'; targetId: Id; targetVersion?: string; attributionId: string }
+
+export interface ModuleEvolutionBinding {
+  id: Id; traceId: Id; packageId: Id; moduleScoreId: Id; automaticRevisionId: Id
+  processEvaluationId?: Id; scoreDimensionId?: Id; findingId: Id; attributionRecordId?: Id
+  evolutionRecordIds: Id[]; origin: 'MOCK' | 'LOCAL' | 'LEGACY'; createdAt: ISODateTime
+}
+export interface EvolutionRecord extends EntityBase {
+  target: EvolutionTargetIdentity; name: string; origin: 'MOCK' | 'LOCAL' | 'LEGACY'
+  sourceFindingIds: Id[]; sourceAttributionIds: Id[]; sourceIssueIds: Id[]; sourceClusterIds: Id[]
+  optimizationMode?: OptimizationMode; triggerRuleId?: Id
+  routingDeliveryIds: Id[]; datasetIds: Id[]; variantIds: Id[]
+  singleExperimentIds: Id[]; windowExperimentIds: Id[]; decisionIds: Id[]; releaseIds: Id[]
+  supersedesRecordId?: Id
 }
 export type EvaluationBatchStatus = 'DRAFT' | 'QUEUED' | 'RUNNING' | 'PARTIAL' | 'COMPLETED' | 'FAILED'
 export type EvaluationJobStatus = 'QUEUED' | 'RUNNING' | 'PARTIAL' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
@@ -63,6 +83,56 @@ export type RouteDestinationType = 'DIRECT_FIX' | 'ISSUE_CLUSTER' | 'STRATEGY_BA
 export type EvidenceKind = 'INPUT' | 'OUTPUT' | 'ERROR' | 'LOG' | 'ARTIFACT' | 'USER_FEEDBACK' | 'RULE'
 
 export interface EntityBase { id: Id; createdAt: ISODateTime; updatedAt: ISODateTime }
+
+/** Opaque external identity. Values stay strings, including numeric IDs. */
+export interface IdentityAlias { kind: 'trace' | 'session'; alias: string; canonicalId: Id }
+export interface GovernanceReference { kind: import('./components/ViewPrimitives').ReferenceKind; id: Id }
+export interface TraceGovernanceEvent {
+  parentEventIds?: Id[]
+  id: Id; traceId: Id; caseId: Id; branchId?: Id; occurredAt?: ISODateTime; recordedAt: ISODateTime
+  stage: string; statusCode: string; actor: string; description: string
+  sourceRef?: GovernanceReference; targetRefs: GovernanceReference[]
+  origin: 'MOCK' | 'LOCAL' | 'LEGACY'; relationType: 'TRACE_SOURCE' | 'CASE_SHARED' | 'VALIDATION'; sourceEventId?: Id
+}
+export interface DatasetMembershipRecord {
+  id: Id; datasetId: Id; datasetVersion: string; caseId: Id; traceIds: Id[]; scope: 'TRACE' | 'CASE_SHARED'
+  joinedAt?: ISODateTime; actor: string; origin: 'MOCK' | 'LOCAL' | 'LEGACY'; sourceEventId?: Id
+}
+
+/** An immutable record of the sampling decision used to populate a local
+ * custom dataset.  The allocation keeps the per-attribution share visible so
+ * a later evaluation can explain why a Trace was selected. */
+export interface DatasetSamplingAllocation {
+  evolutionRecordId: Id
+  attributionId: Id
+  attributionLabel: string
+  historicalTraceCount: number
+  historicalShare: number
+  requestedCount: number
+  sampledTraceIds: Id[]
+}
+
+export interface DatasetSamplingSnapshot extends EntityBase {
+  datasetId: Id
+  assetKind: 'SKILL' | 'MEMORY' | 'REASON' | 'ACT' | 'CONTEXT' | 'OTHER_BADCASE'
+  assetId: Id
+  assetVersion?: string
+  requestedCount: number
+  candidateTraceIds: Id[]
+  allocations: DatasetSamplingAllocation[]
+  deduplicatedTraceCount: number
+  samplingRule: string
+  status: 'PREVIEW' | 'APPLIED'
+  createdBy: string
+  appliedAt?: ISODateTime
+}
+export interface ModuleReviewRevision {
+  id: Id; traceId: Id; caseId: Id; packageId: Id; moduleScoreId: Id; automaticRevisionId: Id
+  humanScore?: number; auxiliaryVerdict: ModuleEvaluationStatus; reason: string; reviewer: string; reviewedAt: ISODateTime
+  evidenceIds: Id[]; rubricVersion: string; rubricRule: string; evalAgentVersion: string
+  automaticSnapshot: { score?: number; scoreScale: '0-1' | '0-2'; status: ModuleEvaluationStatus; judgeReason: string; evidence: EvaluationEvidenceBundle; evalAgentVersion: string; rubricVersion: string }
+  supersedesReviewId?: Id; origin: 'LOCAL' | 'LEGACY' | 'MOCK'
+}
 
 export interface Session extends EntityBase {
   title: string
@@ -163,6 +233,7 @@ export interface Evidence extends EntityBase {
 }
 
 export interface Artifact extends EntityBase {
+  verticalScenario?: VerticalScenario
   caseId: Id
   traceId: Id
   name: string
@@ -174,6 +245,12 @@ export interface Artifact extends EntityBase {
 }
 
 export interface EvaluationRevision {
+  evalVersion?: string
+  evalAgentVersion?: string
+  rubricRule?: string
+  automaticSnapshot?: { score?: number; scoreScale: '0-1' | '0-2'; verdict: EvaluationVerdict; reason: string; evidenceIds: Id[]; evaluatedAt?: ISODateTime; evalVersion: string; evalAgentVersion?: string; rubricRule?: string }
+  scoreScale?: '0-1' | '0-2'
+  automaticRevisionId?: Id
   id: Id
   source: EvaluationSource
   verdict: EvaluationVerdict
@@ -202,7 +279,7 @@ interface EvaluationBase extends EntityBase {
 }
 
 export interface ProcessEval extends EvaluationBase { type: 'PROCESS'; observationId: Id; dimension: string; failedNodeId?: Id }
-export interface OutcomeEval extends EvaluationBase { type: 'OUTCOME'; artifactId: Id; dimension: string }
+export interface OutcomeEval extends EvaluationBase { type: 'OUTCOME'; artifactId: Id; dimension: string; scoreScale?: '0-1' | '0-2'; rubricRule?: string; evalAgentVersion?: string; isFinal?: boolean }
 
 export interface Attribution extends EntityBase {
   caseId: Id; traceId: Id; observationId?: Id; module: EvolutionModule; dimension: string; evidenceIds: Id[]
@@ -229,6 +306,8 @@ export interface EvaluationEvidenceBundle {
 }
 
 export interface ModuleEvaluationScore extends EntityBase {
+  automaticRevisionId?: Id
+  scoreScale?: '0-1' | '0-2'
   packageId: Id
   traceId: Id
   caseId: Id
@@ -317,7 +396,7 @@ export interface TraceRating {
   rubric: string
   processFinal?: number
   outcomeFinal?: number
-  processDimensions: Array<{ module: TraceEvaluationModuleCode; dimension: string; score?: number; scoreId?: Id }>
+  processDimensions: Array<{ id?: Id; module: TraceEvaluationModuleCode; dimension: string; score?: number; scoreId?: Id }>
   outcomeDimensions: Array<{ dimension: string; score?: number; evaluationId?: Id }>
 }
 
@@ -517,6 +596,70 @@ export interface Asset extends EntityBase {
   reviewStatus: 'PENDING' | 'APPROVED' | 'REJECTED'; publishStatus: 'NOT_PUBLISHED' | 'PUBLISHED'
 }
 
+/** Unified asset catalog used by the Asset Management workbench.  The
+ * existing Asset entity remains the source of truth for sanitization,
+ * review and publication; these records provide a stable analytical view for
+ * Skills and non-Skill assets such as Memory, Tool and System Prompt. */
+export type AssetCatalogKind = 'TASTE_SKILL' | 'PRODUCTION_SKILL' | 'PERSONAL_SKILL' | 'MEMORY' | 'TOOL' | 'SYSTEM_PROMPT' | 'OTHER_CAPABILITY'
+export type AssetCatalogStatus = 'ACTIVE' | 'CANDIDATE' | 'DEPRECATED' | 'PLANNED'
+export interface AssetCatalogEntry extends EntityBase {
+  name: string
+  kind: AssetCatalogKind
+  description: string
+  status: AssetCatalogStatus
+  ownerScope: 'SYSTEM' | 'TEAM' | 'USER'
+  skillId?: Id
+  legacyAssetId?: Id
+  currentVersionId?: Id
+  visibility: 'PRIVATE' | 'PUBLIC'
+}
+export interface AssetVersion extends EntityBase {
+  assetId: Id
+  version: string
+  status: AssetCatalogStatus
+  /** Explicit deployment state, independent of asset category and filters. */
+  deployment?: {
+    environment?: 'Production' | 'Staging'
+    status: 'ACTIVE' | 'CANARY' | 'OFFLINE' | 'NOT_DEPLOYED'
+    source: 'MOCK' | 'SERVICE' | 'LOCAL'
+    updatedAt: ISODateTime
+  }
+  description: string
+  releasedAt?: ISODateTime
+  effectiveFrom?: ISODateTime
+  effectiveTo?: ISODateTime
+  sourceEvolutionRecordIds: Id[]
+}
+/** One assessed artifact produced while a particular asset version was active.
+ * Scores are always exposed on the workbench's 0–2 scale. */
+export interface AssetPerformanceRecord extends EntityBase {
+  assetId: Id
+  assetVersionId: Id
+  traceId: Id
+  caseId: Id
+  artifactId?: Id
+  outcomeEvalId?: Id
+  score?: number
+  scoreScale: '0-2'
+  /** Query occurrence time used by the workbench time-window filter. */
+  queryAt?: ISODateTime
+  scoredAt: ISODateTime
+  datasetIds: Id[]
+  evolutionRecordIds: Id[]
+}
+/** Contribution index between an asset version, an attribution/evolution item,
+ * and the de-duplicated Trace set that produced that evolution. */
+export interface AssetEvolutionContribution extends EntityBase {
+  assetId: Id
+  assetVersionId: Id
+  evolutionRecordId: Id
+  attributionId: Id
+  attributionLabel: string
+  traceIds: Id[]
+  datasetIds: Id[]
+  status: 'HISTORICAL' | 'IN_PROGRESS' | 'COMPLETED' | 'NOT_STARTED'
+}
+
 export interface Variant extends EntityBase {
   name: string; targetModule: EvolutionModule
   changeType: 'SKILL_CONTENT' | 'SKILL_METADATA' | 'PROMPT_OR_POLICY' | 'TOOL_STABILITY' | 'ASSET'
@@ -531,6 +674,15 @@ export interface Dataset extends EntityBase {
   name: string; type: 'ATTRIBUTION' | 'GENERALIZATION' | 'REGRESSION' | 'WINDOW_ONLINE'; version: string
   caseIds: Id[]; sampleCount: number; source: string; timeRange?: { from: ISODateTime; to: ISODateTime }
   scope: string; frozen: boolean; population: DatasetPopulation
+  /** Explicit category; legacy records may omit this and are treated as GATE. */
+  datasetCategory?: DatasetCategory
+  /** SYSTEM datasets are seeded by the platform; USER_CUSTOM datasets are
+   * created in the local workbench and remain editable until frozen. */
+  datasetOrigin?: 'SYSTEM' | 'USER_CUSTOM'
+  description?: string
+  /** User-owned datasets retain their owner rather than inferring it from display text. */
+  createdBy?: string
+  ownerScope?: 'SYSTEM' | 'USER' | 'TEAM'
   purpose?: DatasetPurpose
   targets?: EvolutionTarget[]
   setRole?: 'EVALUATION' | 'GATE' | 'GOLDEN'
@@ -541,6 +693,89 @@ export interface Dataset extends EntityBase {
 
 export interface DatasetPopulation {
   totalSampleCount: number; localCaseCount: number; externalSampleCount: number; sourceSystem: string; countingRule: string
+}
+
+/** User-authored inputs stay separate from existing Case / Trace membership. */
+export type DatasetExecutionStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'PARTIAL' | 'FAILED'
+export type DatasetExecutionMode = 'GENERATE_AND_EVALUATE' | 'EVALUATE_ONLY'
+export type DatasetExecutionScope = 'ALL' | 'PENDING'
+export type DatasetMockScenario = 'SUCCESS' | 'PARTIAL_FAILURE' | 'FAILURE'
+export interface DatasetQueryRecord extends EntityBase {
+  datasetId: Id
+  datasetVersion: string
+  query: string
+  verticalScenario: VerticalScenario
+  assetId?: Id
+  assetVersionId?: Id
+  createdBy: string
+  status: DatasetExecutionStatus
+  latestRunId?: Id
+}
+export interface DatasetExecutionInputSnapshot {
+  id: Id
+  sourceQueryId?: Id
+  sourceTraceId?: Id
+  sourceCaseId?: Id
+  query: string
+  verticalScenario: VerticalScenario
+  assetId?: Id
+  assetVersionId?: Id
+  skillId?: Id
+  skillVersion?: string
+}
+export interface DatasetExecutionConfigSnapshot {
+  datasetSnapshot: Dataset
+  inputs: DatasetExecutionInputSnapshot[]
+  scope: DatasetExecutionScope
+  assetId?: Id
+  assetVersionId?: Id
+  evalAgentVersion: string
+  rubricVersion: string
+  model: string
+  runEnvironment: string
+  mockScenario: DatasetMockScenario
+  createdAt: ISODateTime
+}
+/** Every completed item keeps the evidence and scoring response as recorded. */
+export interface DatasetExecutionResultSnapshot {
+  capturedAt: ISODateTime
+  processEvals: ProcessEval[]
+  outcomeEvals: OutcomeEval[]
+  moduleScores: ModuleEvaluationScore[]
+  evidence: Evidence[]
+  artifacts: Artifact[]
+  rating: TraceRating
+}
+export interface DatasetExecutionItem {
+  id: Id
+  input: DatasetExecutionInputSnapshot
+  status: DatasetExecutionStatus
+  phase?: 'GENERATING' | 'EVALUATING'
+  caseId?: Id
+  traceId?: Id
+  sessionId?: Id
+  artifactIds: Id[]
+  evidenceIds: Id[]
+  packageId?: Id
+  processFinal?: number
+  outcomeFinal?: number
+  errorReason?: string
+  startedAt?: ISODateTime
+  completedAt?: ISODateTime
+  resultSnapshot?: DatasetExecutionResultSnapshot
+}
+export interface DatasetExecutionRun extends EntityBase {
+  datasetId: Id
+  datasetVersion: string
+  mode: DatasetExecutionMode
+  status: DatasetExecutionStatus
+  configSnapshot: DatasetExecutionConfigSnapshot
+  items: DatasetExecutionItem[]
+  evaluationBatchId: Id
+  createdBy: string
+  startedAt?: ISODateTime
+  completedAt?: ISODateTime
+  errorReason?: string
 }
 
 export interface ExperimentMetric {
@@ -619,9 +854,19 @@ export interface ReleaseVersion extends EntityBase {
   releasedAt?: ISODateTime; rollbackVersionId?: Id; rollbackReason?: string
 }
 
+export type ScopedRuleType = 'GATE' | 'ROUTING' | 'CLUSTER'
+/** A missing version applies to this asset's versions; never to other assets. */
+export interface RuleScope { assetId: Id; attributionId: Id; assetVersion?: string }
+export type ScopedRuleConfiguration =
+  | { type: 'GATE'; scope: RuleScope; settings: { processMin?: number; outcomeMin?: number; generalizationMin?: number; requireHumanReview: boolean } }
+  | { type: 'ROUTING'; scope: RuleScope; settings: { destinations: Array<'STRATEGY' | 'AGENT'>; owner?: string } }
+  | { type: 'CLUSTER'; scope: RuleScope; settings: { minCases?: number; countingUnit: 'CONFIRMED_CASE'; windowDays?: number; minimumSimilarity?: number; requireHumanConfirmation: boolean } }
+
 export interface RuleConfig extends EntityBase {
-  name: string; category: 'TRIGGER' | 'EXPERIMENT' | 'GATE' | 'MONITORING'; status: 'CONFIGURED' | 'PENDING'
+  name: string; category: 'TRIGGER' | 'EXPERIMENT' | 'GATE' | 'MONITORING' | 'ROUTING'; status: 'CONFIGURED' | 'PENDING'
   value?: number | string | boolean; unit?: string; description: string
+  /** Optional to preserve existing global rules and old persisted snapshots. */
+  configuration?: ScopedRuleConfiguration
 }
 
 export interface AuditEvent {
@@ -630,6 +875,22 @@ export interface AuditEvent {
 }
 
 export interface EvolutionState {
+  moduleEvolutionBindings?: ModuleEvolutionBinding[]
+  evolutionRecords?: EvolutionRecord[]
+  identityAliases?: IdentityAlias[]
+  moduleReviews?: ModuleReviewRevision[]
+  datasetMemberships?: DatasetMembershipRecord[]
+  /** Immutable local sampling decisions; absent in pre-v2.7 persisted data. */
+  datasetSamplingSnapshots?: DatasetSamplingSnapshot[]
+  /** Additive local generation / evaluation history; older snapshots omit these. */
+  datasetQueries?: DatasetQueryRecord[]
+  datasetExecutionRuns?: DatasetExecutionRun[]
+  /** Analytical asset catalog; absent in pre-asset-workbench snapshots. */
+  assetCatalog?: AssetCatalogEntry[]
+  assetVersions?: AssetVersion[]
+  assetPerformanceRecords?: AssetPerformanceRecord[]
+  assetEvolutionContributions?: AssetEvolutionContribution[]
+  governanceEvents?: TraceGovernanceEvent[]
   schemaVersion: number; seedVersion: string; isMockData: true; updatedAt: ISODateTime
   sessions: Session[]; cases: Case[]; traces: Trace[]; observations: ObservationLog[]; evidence: Evidence[]
   artifacts: Artifact[]; processEvals: ProcessEval[]; outcomeEvals: OutcomeEval[]; attributions: Attribution[]
@@ -653,4 +914,4 @@ export type EvolutionEntity = Session | Case | Trace | ObservationLog | Evidence
   | Attribution | Issue | IssueCluster | Skill | Asset | Variant | Dataset | Experiment | ExperimentRun
   | Window | GateDecision | ReleaseVersion | RuleConfig | EvaluationBatch | EvaluationJob | TraceEvaluationPackage
   | EvaluationFinding | RoutingPolicy | RoutingDecision | RoutingDelivery | AlgorithmBadcaseItem | BadcaseQueue
-  | TastePreferenceSignal
+  | TastePreferenceSignal | DatasetSamplingSnapshot | DatasetQueryRecord | DatasetExecutionRun | AssetCatalogEntry | AssetVersion | AssetPerformanceRecord | AssetEvolutionContribution

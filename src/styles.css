@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+/* The consolidated asset governance ledger is represented by the three-window
+   workbench above; keep the legacy list out of the user-facing layout. */
+.asset-management-page > section:nth-of-type(2) { display: none; }
+
 :root {
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   color: #17202b;

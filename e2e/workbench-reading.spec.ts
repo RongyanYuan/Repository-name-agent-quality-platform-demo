@@ -1,15 +1,18 @@
 import { expect, test } from '@playwright/test'
 
 test('人类阅读路径：Case → Trace 评测 → Evidence → 统一治理历史', async ({ page }) => {
-  await page.goto('/cases?timeRange=30d&environment=Production')
-  await page.getByRole('button', { name: '查看完整 Case case-ppt-management', exact: true }).click()
+  await page.goto('/cases?timeRange=30d&environment=Production&traceId=trace-ppt-generate&caseView=trace')
   const detail = page.getByRole('dialog', { name: /Case 详情/ })
+  await expect(detail.getByRole('tab', { name: '评测中心' })).toHaveAttribute('aria-selected', 'true')
   await expect(detail.getByRole('heading', { name: 'Trace 模块评测矩阵' })).toBeVisible()
   await detail.getByRole('button', { name: '查看 skill Evidence' }).click()
   const evidence = page.getByRole('dialog', { name: /skill Evidence/ })
   await expect(evidence).toContainText('rubric-office-v2.1#skill')
   await evidence.getByRole('button', { name: 'Close panel', exact: true }).click()
-  await detail.getByRole('button', { name: /查看 Finding/ }).first().click()
+  await detail.getByRole('button', { name: '查看 skill 进化历史', exact: true }).click()
+  const module=page.getByRole('dialog',{name:'skill · 进化详情',exact:true})
+  await module.getByRole('button',{name:'skill name/description错误',exact:true}).click()
+  await module.getByRole('button',{name:'finding-trace-ppt-generate-skill',exact:true}).first().click()
   await expect(page).toHaveURL(/\/datasets-evaluations\?.*findingId=/)
   await expect(page).toHaveURL(/timeRange=30d/)
   await expect(page).toHaveURL(/environment=Production/)

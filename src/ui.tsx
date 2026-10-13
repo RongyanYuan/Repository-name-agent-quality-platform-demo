@@ -324,40 +324,48 @@ export interface DrawerProps extends LayerProps { side?: 'right' | 'left'; width
 
 const layerWidth = (width: DrawerProps['width']) => width === 'sm' ? 'max-w-sm' : width === 'lg' ? 'max-w-2xl' : width === 'md' || !width ? 'max-w-xl' : width
 
+function useLayerKeyboard(open: boolean, onClose: () => void, panel: RefObject<HTMLElement>, focusTarget: RefObject<HTMLElement>) {
+  const closeAction=useRef(onClose)
+  closeAction.current=onClose
+  useEffect(()=>{
+    if(!open)return
+    const previous=document.activeElement as HTMLElement|null
+    const topLayer=()=>Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]')).at(-1)
+    const onKeyDown=(event:globalThis.KeyboardEvent)=>{
+      if(event.key!=='Escape' || event.defaultPrevented || topLayer()!==panel.current)return
+      event.preventDefault();event.stopImmediatePropagation();closeAction.current()
+    }
+    document.addEventListener('keydown',onKeyDown)
+    if(topLayer()===panel.current)focusTarget.current?.focus()
+    return ()=>{
+      document.removeEventListener('keydown',onKeyDown)
+      const current=topLayer()
+      if(previous?.isConnected && (!current || current.contains(previous)))previous.focus()
+      else if(current && !current.contains(document.activeElement))current.focus()
+    }
+  },[open,panel,focusTarget])
+}
+
 export function Drawer({ open, onClose, title, description, children, footer, side = 'right', width = 'md', closeLabel = 'Close panel', className, labelledBy, describedBy, initialFocusRef }: DrawerProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const titleId = useId()
   const descriptionId = useId()
-  useEffect(() => {
-    if (!open) return
-    const previous = document.activeElement as HTMLElement | null
-    const onKeyDown = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') onClose() }
-    document.addEventListener('keydown', onKeyDown)
-    const focusTarget = initialFocusRef?.current ?? closeRef.current
-    focusTarget?.focus()
-    return () => { document.removeEventListener('keydown', onKeyDown); previous?.focus?.() }
-  }, [open, onClose, initialFocusRef])
+  useLayerKeyboard(open,onClose,panelRef,initialFocusRef ?? closeRef)
   if (!open) return null
   return <div className="fixed inset-0 z-50" role="presentation"><button type="button" aria-label="Close overlay" onClick={onClose} className="absolute inset-0 cursor-default bg-slate-950/25 backdrop-blur-[1px]" /><div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={labelledBy ?? titleId} aria-describedby={description ? (describedBy ?? descriptionId) : undefined} className={cn('absolute inset-y-0 flex w-full flex-col bg-panel shadow-2xl outline-none', side === 'right' ? 'right-0 border-l border-line' : 'left-0 border-r border-line', layerWidth(width), className)} tabIndex={-1}><header className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-5 py-4"><div className="min-w-0"><h2 id={labelledBy ?? titleId} className="truncate text-base font-semibold text-ink">{title}</h2>{description && <p id={describedBy ?? descriptionId} className="mt-1 text-xs leading-5 text-muted">{description}</p>}</div><button ref={closeRef} type="button" onClick={onClose} aria-label={closeLabel} title={closeLabel} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted transition hover:bg-slate-100 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><X aria-hidden="true" className="h-4 w-4" /></button></header><div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>{footer && <footer className="shrink-0 border-t border-line bg-slate-50 px-5 py-3">{footer}</footer>}</div></div>
 }
 
 export interface ModalProps extends LayerProps { size?: 'sm' | 'md' | 'lg'; closeLabel?: string; initialFocusRef?: RefObject<HTMLElement> }
 export function Modal({ open, onClose, title, description, children, footer, size = 'md', closeLabel = 'Close dialog', className, labelledBy, describedBy, initialFocusRef }: ModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const titleId = useId()
   const descriptionId = useId()
-  useEffect(() => {
-    if (!open) return
-    const previous = document.activeElement as HTMLElement | null
-    const onKeyDown = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') onClose() }
-    document.addEventListener('keydown', onKeyDown)
-    ;(initialFocusRef?.current ?? closeRef.current)?.focus()
-    return () => { document.removeEventListener('keydown', onKeyDown); previous?.focus?.() }
-  }, [open, onClose, initialFocusRef])
+  useLayerKeyboard(open,onClose,panelRef,initialFocusRef ?? closeRef)
   if (!open) return null
   const sizeClass = size === 'sm' ? 'max-w-md' : size === 'lg' ? 'max-w-3xl' : 'max-w-xl'
-  return <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="presentation"><button type="button" aria-label="Close overlay" onClick={onClose} className="absolute inset-0 cursor-default bg-slate-950/30" /><div role="dialog" aria-modal="true" aria-labelledby={labelledBy ?? titleId} aria-describedby={description ? (describedBy ?? descriptionId) : undefined} className={cn('relative flex max-h-[min(720px,calc(100vh-2rem))] w-full flex-col overflow-hidden rounded-lg border border-line bg-panel shadow-2xl outline-none', sizeClass, className)}><header className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-5 py-4"><div className="min-w-0"><h2 id={labelledBy ?? titleId} className="text-base font-semibold text-ink">{title}</h2>{description && <p id={describedBy ?? descriptionId} className="mt-1 text-xs leading-5 text-muted">{description}</p>}</div><button ref={closeRef} type="button" onClick={onClose} aria-label={closeLabel} title={closeLabel} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted transition hover:bg-slate-100 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><X aria-hidden="true" className="h-4 w-4" /></button></header><div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>{footer && <footer className="shrink-0 border-t border-line bg-slate-50 px-5 py-3">{footer}</footer>}</div></div>
+  return <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="presentation"><button type="button" aria-label="Close overlay" onClick={onClose} className="absolute inset-0 cursor-default bg-slate-950/30" /><div ref={panelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={labelledBy ?? titleId} aria-describedby={description ? (describedBy ?? descriptionId) : undefined} className={cn('relative flex max-h-[min(720px,calc(100vh-2rem))] w-full flex-col overflow-hidden rounded-lg border border-line bg-panel shadow-2xl outline-none', sizeClass, className)}><header className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-5 py-4"><div className="min-w-0"><h2 id={labelledBy ?? titleId} className="text-base font-semibold text-ink">{title}</h2>{description && <p id={describedBy ?? descriptionId} className="mt-1 text-xs leading-5 text-muted">{description}</p>}</div><button ref={closeRef} type="button" onClick={onClose} aria-label={closeLabel} title={closeLabel} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted transition hover:bg-slate-100 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><X aria-hidden="true" className="h-4 w-4" /></button></header><div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>{footer && <footer className="shrink-0 border-t border-line bg-slate-50 px-5 py-3">{footer}</footer>}</div></div>
 }
 
 export interface EmptyStateProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title'> { title: ReactNode; description?: ReactNode; action?: ReactNode; icon?: LucideIcon }

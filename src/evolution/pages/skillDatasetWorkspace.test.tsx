@@ -4,6 +4,10 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import App from '../../App'
 import { QualityProvider } from '../../store'
 import { EvolutionProvider } from '../store'
+import { createInitialEvolutionData } from '../data'
+import { resolveIdentity } from '../identity'
+const identityState = createInitialEvolutionData()
+const canonicalTrace = (id:string) => resolveIdentity(identityState,'trace',id)
 
 function Location() {
   const location = useLocation()
@@ -41,12 +45,12 @@ describe('Skill version attribution dataset journey', () => {
     fireEvent.click(await screen.findByRole('row', { name: /dataset-workspace-ppt-260-sop-attribution/ }))
     const detail = screen.getByRole('dialog', { name: /数据集详情/ })
     const samples = within(detail).getByRole('table', { name: '数据集样本 Trace' })
-    expect(samples).toHaveTextContent('trace-workspace-ppt-260-sop-1')
-    expect(samples).not.toHaveTextContent('trace-tool-export')
+    expect(samples).toHaveTextContent(canonicalTrace('trace-workspace-ppt-260-sop-1'))
+    expect(samples).not.toHaveTextContent(canonicalTrace('trace-tool-export'))
     expect(within(samples).getByRole('columnheader', { name: 'Query 时间' })).toBeVisible()
     fireEvent.click(within(samples).getAllByRole('button', { name: '查看 Case / Trace' })[0])
     await waitFor(() => expect(screen.getByTestId('workspace-location')).toHaveTextContent('/cases?'))
-    expect(screen.getByRole('dialog', { name: /Case 详情/ })).toHaveTextContent('trace-workspace-ppt-260-sop-1')
+    expect(screen.getByRole('dialog', { name: /Case 详情/ })).toHaveTextContent(canonicalTrace('trace-workspace-ppt-260-sop-1'))
     fireEvent.click(screen.getByRole('button', { name: '返回来源页面' }))
     await waitFor(() => expect(screen.getByLabelText('Skill 版本')).toHaveValue('2.6.0'))
     expect(screen.getByLabelText('归因')).toHaveValue('skill-sop')
@@ -67,8 +71,10 @@ describe('Skill version attribution dataset journey', () => {
   it('opens an explicitly linked dataset Case even when the retained online scope excludes it', async () => {
     open('/cases?caseId=case-ppt-management&traceId=trace-ppt-generate&skill=skill-word-writer&businessType=Word&environment=Staging&timeRange=24h')
     const detail = await screen.findByRole('dialog', { name: /Case 详情 · case-ppt-management/ })
-    expect(detail).toHaveTextContent('trace-ppt-generate')
-    expect(detail).toHaveTextContent('obs-ppt-skill')
+    expect(detail).toHaveTextContent(canonicalTrace('trace-ppt-generate'))
+    expect(within(detail).getByRole('tab', { name: '评测中心' })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(within(detail).getByRole('button', { name: '查看 skill Evidence' }))
+    expect(screen.getByRole('dialog', { name: 'skill Evidence' })).toHaveTextContent('obs-ppt-skill')
     expect(screen.getByRole('table', { name: 'Case / Trace 列表' })).not.toHaveTextContent('case-ppt-management')
   })
 
@@ -172,7 +178,8 @@ describe('Skill version attribution dataset journey', () => {
     expect(screen.getByLabelText('Skill 版本')).toHaveValue('')
     const cases = screen.getByRole('table', { name: 'Case / Trace 列表' })
     expect(cases).toHaveTextContent('case-ppt-management')
-    expect(cases).toHaveTextContent('case-workspace-ppt-260-sop-1')
+    fireEvent.change(screen.getByLabelText('Trace ID'),{target:{value:'trace-workspace-ppt-260-sop-1'}})
+    expect(screen.getByRole('table',{name:'Case / Trace 列表'})).toHaveTextContent('case-workspace-ppt-260-sop-1')
   })
 
   it('makes Skill category and governance object mutually exclusive', async () => {

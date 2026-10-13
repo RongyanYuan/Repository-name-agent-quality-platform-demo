@@ -11,6 +11,9 @@ import {
 } from './model'
 import { CaseAnalysisWorkbench } from './CaseAnalysisWorkbench'
 import { evolutionReducer } from '../store'
+import { resolveIdentity } from '../identity'
+const identityState = createInitialEvolutionData()
+const traceId = (id:string) => resolveIdentity(identityState,'trace',id)
 
 const data = buildCaseAnalysisData(qualityData)
 
@@ -61,7 +64,7 @@ describe('Case / Trace analysis model', () => {
     const normalized = buildCaseAnalysisDataFromEvolution(createInitialEvolutionData())
     const record = normalized.cases.find((item) => item.id === 'case-ppt-management')
 
-    expect(record?.session.id).toBe('session-ppt-management')
+    expect(record?.session.id).toBe(resolveIdentity(identityState,'session','session-ppt-management'))
     expect(record?.processEvals.map((item) => item.id)).toContain('process-eval-ppt-recall')
     expect(record?.artifacts.map((item) => item.id)).toContain('artifact-ppt-management')
     expect(record?.links.map((item) => item.kind)).toEqual(expect.arrayContaining(['issue', 'issue-cluster', 'variant', 'experiment', 'release']))
@@ -69,8 +72,8 @@ describe('Case / Trace analysis model', () => {
   it('keeps the primary Trace recorded Skill version instead of substituting the current catalog version', () => {
     const state = createInitialEvolutionData()
     state.skills.find(skill => skill.id === 'skill-ppt-builder')!.version = '9.0.0'
-    state.traces.find(trace => trace.id === 'trace-ppt-generate')!.skillVersion = 'ppt-builder-2.5.0'
-    state.tracePackages.find(pkg => pkg.traceId === 'trace-ppt-generate')!.skillVersion = '2.5.0'
+    state.traces.find(trace => trace.id === traceId('trace-ppt-generate'))!.skillVersion = 'ppt-builder-2.5.0'
+    state.tracePackages.find(pkg => pkg.traceId === traceId('trace-ppt-generate'))!.skillVersion = '2.5.0'
     const normalized = buildCaseAnalysisDataFromEvolution(state)
     const record = normalized.cases.find(item => item.id === 'case-ppt-management')!
     expect(record.skill.version).toBe('2.5.0')
@@ -79,18 +82,18 @@ describe('Case / Trace analysis model', () => {
   })
   it('keeps each multi-Trace Skill identity and version available for active Trace details', () => {
     const state = createInitialEvolutionData()
-    state.traces.find(trace => trace.id === 'trace-ppt-context')!.skillVersion = 'ppt-builder-2.4.0'
-    state.traces.find(trace => trace.id === 'trace-ppt-generate')!.skillVersion = 'ppt-builder-2.5.0'
-    state.tracePackages.find(pkg => pkg.traceId === 'trace-ppt-context')!.skillIds = ['skill-spreadsheet']
+    state.traces.find(trace => trace.id === traceId('trace-ppt-context'))!.skillVersion = 'ppt-builder-2.4.0'
+    state.traces.find(trace => trace.id === traceId('trace-ppt-generate'))!.skillVersion = 'ppt-builder-2.5.0'
+    state.tracePackages.find(pkg => pkg.traceId === traceId('trace-ppt-context'))!.skillIds = ['skill-spreadsheet']
     const record = buildCaseAnalysisDataFromEvolution(state).cases.find(item => item.id === 'case-ppt-management')!
     expect(record.skill.version).toBe('2.5.0')
-    expect(record.skillsByTrace?.['trace-ppt-context']).toMatchObject({ id: 'skill-spreadsheet', version: '2.4.0' })
-    expect(record.skillsByTrace?.['trace-ppt-generate']).toMatchObject({ id: 'skill-ppt-builder', version: '2.5.0' })
+    expect(record.skillsByTrace?.[traceId('trace-ppt-context')]).toMatchObject({ id: 'skill-spreadsheet', version: '2.4.0' })
+    expect(record.skillsByTrace?.[traceId('trace-ppt-generate')]).toMatchObject({ id: 'skill-ppt-builder', version: '2.5.0' })
   })
   it('uses an evaluation package recorded version when available and otherwise preserves missing source version', () => {
     const state = createInitialEvolutionData()
-    state.traces.find(trace => trace.id === 'trace-ppt-generate')!.skillVersion = undefined
-    const pkg = state.tracePackages.find(item => item.traceId === 'trace-ppt-generate')!
+    state.traces.find(trace => trace.id === traceId('trace-ppt-generate'))!.skillVersion = undefined
+    const pkg = state.tracePackages.find(item => item.traceId === traceId('trace-ppt-generate'))!
     pkg.skillVersion = 'ppt-builder-2.5.0'
     expect(buildCaseAnalysisDataFromEvolution(state).cases.find(item => item.id === 'case-ppt-management')!.skill.version).toBe('2.5.0')
     pkg.skillVersion = undefined
@@ -106,6 +109,32 @@ describe('Case / Trace analysis model', () => {
     expect(after.referenceTime).toBe(before.referenceTime)
     expect(filterCaseAnalysisRecords(after.cases, { timeRange: '7d' }, after.referenceTime).map(record => record.id)).toEqual(ids)
   })
+
+  it('filters exact dataset Trace membership without enrolling a sibling Trace', () => {
+    const state = createInitialEvolutionData()
+    const membership = state.datasetMemberships?.find(item => item.datasetId === 'dataset-golden-test-set-a' && item.scope === 'TRACE')
+    expect(membership).toBeDefined()
+    const normalized = buildCaseAnalysisDataFromEvolution(state)
+    const selectedTrace = membership!.traceIds[0]
+    const selected = normalized.traceRecords!.find(record => record.trace?.id === selectedTrace)
+    expect(selected?.datasetRefs?.find(dataset => dataset.id === membership!.datasetId)).toMatchObject({ membershipScope: 'TRACE', category: 'GOLDEN' })
+    const allMembershipTraceIds = state.datasetMemberships!.filter(item => item.datasetId === membership!.datasetId && item.datasetVersion === membership!.datasetVersion).flatMap(item => item.traceIds)
+    expect(filterCaseAnalysisRecords(normalized.traceRecords!, { datasetId: membership!.datasetId, timeRange: 'all' }, normalized.referenceTime).map(record => record.trace?.id).sort()).toEqual([...new Set(allMembershipTraceIds)].sort())
+    const selectedIds = new Set(allMembershipTraceIds)
+    expect(normalized.traceRecords!.filter(record => record.id === selected?.id && record.trace && !selectedIds.has(record.trace.id)).every(record => !record.datasetRefs?.some(dataset => dataset.id === membership!.datasetId))).toBe(true)
+  })
+
+  it('applies inclusive Query-time boundaries and governance Window filters', () => {
+    const normalized = buildCaseAnalysisDataFromEvolution(createInitialEvolutionData())
+    const target = normalized.traceRecords!.find(record => record.timeWindowRefs?.length)
+    expect(target).toBeDefined()
+    const timestamp = target!.task.timestamp
+    expect(filterCaseAnalysisRecords(normalized.traceRecords!, { timeFrom: timestamp, timeTo: timestamp, timeRange: 'all' }, normalized.referenceTime)).toContainEqual(target)
+    const window = target!.timeWindowRefs![0]
+    expect(filterCaseAnalysisRecords(normalized.traceRecords!, { timeWindowId: window.id, timeRange: 'all' }, normalized.referenceTime).some(record => record.trace?.id === target!.trace?.id)).toBe(true)
+    const oneMsLater = new Date(Date.parse(timestamp) + 1).toISOString()
+    expect(filterCaseAnalysisRecords(normalized.traceRecords!, { timeFrom: oneMsLater, timeTo: oneMsLater, timeRange: 'all' }, normalized.referenceTime)).not.toContainEqual(target)
+  })
 })
 
 describe('CaseAnalysisWorkbench', () => {
@@ -114,7 +143,7 @@ describe('CaseAnalysisWorkbench', () => {
 
     expect(screen.getByText('本地 Mock 数据')).toBeVisible()
     expect(screen.queryByRole('heading', { name: 'Case / Trace 分析', level: 1 })).not.toBeInTheDocument()
-    for (const label of ['Channel', '垂类场景', 'Session ID', 'Trace ID', 'Skill ID', 'Skill 版本', '时间范围', '过程最终得分（0–2）', '结果最终得分（0–2）', '归因', 'Log ID', '分流标签', '多场景命中']) {
+    for (const label of ['Channel', '垂类场景', 'Session ID', 'Trace ID', 'Skill ID', 'Skill 版本', '时间窗口', '数据集类型', '具体数据集', '过程最终得分（0–2）', '结果最终得分（0–2）', '归因', 'Log ID', '分流标签', '多场景命中']) {
       expect(screen.getByLabelText(label)).toBeVisible()
     }
     expect(screen.queryByLabelText('Query')).not.toBeInTheDocument()
@@ -150,15 +179,19 @@ describe('CaseAnalysisWorkbench', () => {
     expect(screen.queryByRole('button', { name: /打开 Session session-ppt-management/ })).not.toBeInTheDocument()
   })
 
-  it('opens full Trace and evaluations together and exposes a module Evidence bundle immediately', () => {
+  it('opens process evaluation first and separates the process matrix from artifact scores', () => {
     const normalized = buildCaseAnalysisDataFromEvolution(createInitialEvolutionData())
     render(<CaseAnalysisWorkbench data={normalized} initialCaseId="case-ppt-management" />)
-    expect(screen.getByRole('tab', { name: 'Trace 与 Evidence' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: '评测中心' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByRole('tab', { name: '治理链路' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Trace 与 Evidence' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: '任务与关联' })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Trace 模块评测矩阵' })).toBeVisible()
-    expect(screen.getByRole('heading', { name: '过程评测' })).toBeVisible()
-    expect(screen.getByRole('heading', { name: '产物 / 结果评测' })).toBeVisible()
-    expect(screen.getAllByText('1.43 / 2').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('0.58 / 2').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('heading', { name: '过程评测' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '产物 / 结果评测' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('row', { name: /^Outcome/ })).not.toBeInTheDocument()
+    expect(screen.getByText(/过程最终评分（0–2）/)).toHaveTextContent('1.43 / 2')
+    expect(screen.getByRole('region',{name:'当前 Trace 概要'})).not.toHaveTextContent('0.58 / 2')
     fireEvent.click(screen.getByRole('button', { name: '查看 skill Evidence' }))
     const evidence = screen.getByRole('dialog', { name: /skill Evidence/ })
     expect(evidence).toHaveTextContent('候选 executive-report 得分 0.41')
@@ -177,20 +210,26 @@ describe('CaseAnalysisWorkbench', () => {
     await user.click(screen.getAllByRole('button', { name: /打开 Trace trace-001/ })[0])
     expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ kind: 'trace', id: 'trace-001' }))
 
-    await user.click(screen.getByRole('tab', { name: 'Trace 与 Evidence' }))
+    await user.click(screen.getByRole('tab', { name: '评测中心' }))
+    await user.click(screen.getByRole('button', { name: '查看执行节点' }))
+    await user.click(screen.getByRole('button', { name: '查看该 Trace 全部节点' }))
     const memoryNode = screen.getByRole('button', { name: /Memory.*FAIL/ })
     await user.click(memoryNode)
-    expect(screen.getAllByText(/Explicit current requirements must override stale preferences/).length).toBeGreaterThan(0)
-    await user.click(screen.getByRole('button', { name: /查看失败节点 Log/ }))
+    await user.click(screen.getByRole('button', { name: /查看根证据 \+ Rubric/ }))
+    expect(screen.getByRole('dialog',{name:/Evidence/})).toHaveTextContent('Current explicit instruction has precedence.')
+    await user.click(within(screen.getByRole('dialog',{name:/Evidence/})).getByRole('button',{name:'Close panel'}))
+    await user.click(screen.getByRole('button', { name: /查看节点 Log/ }))
     expect(screen.getByRole('dialog', { name: /Log 详情/ })).toBeVisible()
     const logDialog = screen.getByRole('dialog', { name: /Log 详情/ })
     await user.click(within(logDialog).getByRole('button', { name: 'Close panel' }))
 
-    await user.click(screen.getByRole('tab', { name: '任务与关联' }))
-    await user.click(screen.getByRole('button', { name: /查看产物评测/ }))
-    expect(screen.getByRole('tab', { name: '评测中心' })).toHaveAttribute('aria-selected', 'true')
-    await user.click(screen.getByRole('button', { name: /回到相关执行过程/ }))
-    expect(screen.getByRole('tab', { name: 'Trace 与 Evidence' })).toHaveAttribute('aria-selected', 'true')
+    await user.click(within(screen.getByRole('dialog', { name: '执行节点详情' })).getByRole('button', { name: 'Close panel' }))
+    await user.click(screen.getByRole('tab', { name: '产物评测' }))
+    const artifact = data.cases.find(item => item.id === 'case-task-001')!.artifacts[0]
+    expect(within(screen.getByRole('tabpanel')).getByRole('heading', { name: artifact.name })).toBeVisible()
+    await user.click(within(screen.getByRole('tabpanel')).getByRole('button', { name: artifact.id }))
+    expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ kind: 'artifact', id: artifact.id }))
+    expect(screen.getByRole('tab', { name: '产物评测' })).toHaveAttribute('aria-selected', 'true')
   }, 15000)
 
   it('emits non-destructive human confirmation and attribution adjustment actions', async () => {
@@ -203,16 +242,7 @@ describe('CaseAnalysisWorkbench', () => {
     fireEvent.change(screen.getByLabelText('确认说明'), { target: { value: '复核证据后确认。' } })
     await user.click(screen.getByRole('button', { name: '保存人工结论' }))
     expect(onHumanConfirm).toHaveBeenCalledWith(expect.objectContaining({ caseId: 'case-task-001', status: 'FAIL', note: expect.stringContaining('复核证据') }))
-    expect(screen.getByText('复核证据后确认。')).toBeVisible()
-
-    await user.click(screen.getByRole('button', { name: '调整归因' }))
-    await user.selectOptions(screen.getByLabelText('归因模块'), 'Skill')
-    const attributionDialog = screen.getByRole('dialog', { name: '调整归因' })
-    const agentRouting = within(attributionDialog).getByRole('checkbox', { name: 'Agent 迭代' })
-    if ((agentRouting as HTMLInputElement).checked) await user.click(agentRouting)
-    if (!(agentRouting as HTMLInputElement).checked) await user.click(agentRouting)
-    await user.click(screen.getByRole('button', { name: '保存归因调整' }))
-    expect(onAttributionChange).toHaveBeenCalledWith(expect.objectContaining({ caseId: 'case-task-001', module: 'Skill', routingTags: expect.arrayContaining(['策略迭代', 'Agent 迭代']) }))
+    expect(onAttributionChange).not.toHaveBeenCalled()
   })
 
   it('selects an exact Trace in a multi-Trace Case and targets an exact attribution revision', async () => {
@@ -222,8 +252,9 @@ describe('CaseAnalysisWorkbench', () => {
     const normalized = buildCaseAnalysisDataFromEvolution(createInitialEvolutionData())
     render(<CaseAnalysisWorkbench data={normalized} initialCaseId="case-ppt-management" onNavigateReference={onNavigate} onAttributionChange={onAttributionChange} />)
 
-    await user.click(screen.getByRole('button', { name: /切换 Trace trace-ppt-context/ }))
-    expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ kind: 'trace', id: 'trace-ppt-context' }))
+    await user.click(screen.getByRole('button', { name: `切换 Trace ${traceId('trace-ppt-context')}` }))
+    expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ kind: 'trace', id: traceId('trace-ppt-context') }))
+    await user.click(screen.getByRole('button', { name: `切换 Trace ${traceId('trace-ppt-generate')}` }))
 
     await user.click(screen.getByRole('button', { name: '调整归因' }))
     await user.selectOptions(screen.getByLabelText('目标归因'), 'attribution-style-mismatch')
@@ -233,31 +264,42 @@ describe('CaseAnalysisWorkbench', () => {
 
   it('shows batch taste preference evidence and its self-evolution path in Case details', () => {
     const normalized = buildCaseAnalysisDataFromEvolution(createInitialEvolutionData())
-    const tasteCase = normalized.cases.find((item) => item.tastePreference)
+    const tasteCase = normalized.cases.find((item) => item.id === 'case-v2-taste-red')
     expect(tasteCase).toBeDefined()
+    expect(tasteCase!.tastePreference).toMatchObject({ populationTotal: 1000, preferenceCount: 950 })
     render(<CaseAnalysisWorkbench data={normalized} initialCaseId={tasteCase!.id} />)
-    fireEvent.click(screen.getByRole('tab', { name: '评测中心' }))
-    expect(screen.getByText('品味 Skill 批量偏好聚合')).toBeVisible()
-    expect(screen.getByText(/950 人/)).toBeVisible()
-    expect(screen.getAllByText(/Agent 迭代/).length).toBeGreaterThan(0)
-    expect(screen.getByText(/1000 名去重用户反馈/)).toBeVisible()
+    expect(screen.getByRole('tab', { name: '评测中心' })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(screen.getByRole('button', { name: '查看 skill 进化详情' }))
+    const detail=screen.getByRole('dialog',{name:'skill · 进化详情'})
+    const direction=within(detail).getByRole('button',{name:'品味库召回错误'})
+    expect(direction).toHaveAttribute('aria-expanded','false')
+    fireEvent.click(direction)
+    expect(direction).toHaveAttribute('aria-expanded','true')
+    expect(detail).toHaveTextContent('Agent 迭代')
+    expect(detail).toHaveTextContent('120 / 100')
+    fireEvent.click(within(detail).getByRole('button',{name:'查看 Evidence'}))
+    const evidence=screen.getByRole('dialog',{name:/skill Evidence/})
+    expect(evidence).toHaveTextContent(/950 名明确偏好红色/)
+    expect(evidence).toHaveTextContent(/1000 名去重用户反馈/)
   })
 
   it('switches the active Trace and follows its own module evaluation package', async () => {
     const user = userEvent.setup()
     const normalized = buildCaseAnalysisDataFromEvolution(createInitialEvolutionData())
     render(<CaseAnalysisWorkbench data={normalized} initialCaseId="case-ppt-management" />)
-    await user.click(screen.getByRole('button', { name: '切换 Trace trace-ppt-context' }))
+    await user.click(screen.getByRole('button', { name: `切换 Trace ${traceId('trace-ppt-context')}` }))
     await user.click(screen.getByRole('tab', { name: '评测中心' }))
-    const memoryRow = screen.getByRole('row', { name: /记忆.*\/ 2/ })
+    const memoryRow = within(screen.getByRole('dialog', { name: /Case 详情/ })).getByRole('row', { name: /记忆.*\/ 2/ })
     expect(memoryRow).toBeVisible()
-    expect(memoryRow).not.toHaveTextContent(/记忆.*FAIL/)
+    const source = identityState.tracePackages.find(pkg=>pkg.traceId===traceId('trace-ppt-context'))!.moduleScores.find(score=>score.moduleCode==='MEMORY')!
+    expect(memoryRow).toHaveTextContent(source.automaticStatus)
+    expect(memoryRow).toHaveTextContent(`${(source.score!*2).toFixed(2)} / 2`)
   })
 
   it('shows an explicit empty state for a missing case instead of inventing data', () => {
     const emptyData = { ...data, cases: [] }
     render(<CaseAnalysisWorkbench data={emptyData} />)
     const table = screen.getByRole('table', { name: 'Case / Trace 列表' })
-    expect(within(table).getByText('暂无匹配 Case')).toBeVisible()
+    expect(within(table).getByText('暂无匹配 Trace')).toBeVisible()
   })
 })

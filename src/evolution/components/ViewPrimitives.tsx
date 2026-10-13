@@ -1,5 +1,5 @@
-import { ArrowRight, ExternalLink, FlaskConical, Info, type LucideIcon } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { ArrowRight, Copy, ExternalLink, FlaskConical, Info, type LucideIcon } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 import { Button, Drawer, SectionHeader, StatusBadge, cn } from '../../ui'
 
 export type ReferenceKind =
@@ -8,7 +8,7 @@ export type ReferenceKind =
   | 'experiment' | 'experiment-run' | 'window' | 'decision' | 'release'
   | 'evaluation-batch' | 'evaluation-job' | 'trace-package' | 'finding' | 'routing-policy' | 'routing-decision' | 'routing-delivery' | 'badcase' | 'badcase-queue'
 
-export interface ReferenceTarget { kind: ReferenceKind; id: string }
+export interface ReferenceTarget { kind: ReferenceKind; id: string; caseView?: string; evaluationId?: string; artifactId?: string }
 export const REFERENCE_KINDS: readonly ReferenceKind[] = [
   'case', 'session', 'trace', 'observation', 'log', 'evidence', 'artifact', 'process-eval', 'outcome-eval',
   'attribution', 'issue', 'cluster', 'skill', 'asset', 'variant', 'dataset', 'rule',
@@ -40,11 +40,20 @@ export function PageHeading({ eyebrow, title, description, actions }: { eyebrow?
 }
 
 export function IdLink({ id, kind, onOpen, label }: { id: string; kind: ReferenceKind; onOpen?: (target: ReferenceTarget) => void; label?: ReactNode }) {
-  if (!onOpen) return <span role="note" aria-label={`${kind} ${id} 不可导航`} className="font-mono text-[11px] text-muted">{label ?? id} · 不可导航</span>
+  const [copyMessage, setCopyMessage] = useState('')
+  const copyable = kind === 'trace' || kind === 'session'
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(id); setCopyMessage('已复制') }
+    catch { setCopyMessage('复制失败，请选中文本复制') }
+  }
   return (
-    <button type="button" onClick={(event) => { event.stopPropagation(); onOpen?.({ kind, id }) }} className="inline-flex max-w-full items-center gap-1 rounded font-mono text-[11px] font-semibold text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+    <span className="inline-flex max-w-full min-w-0 flex-wrap items-center gap-1 align-middle" title={`${kind}: ${id}`}>
+    {onOpen ? <button type="button" title={`${kind}: ${id}`} onClick={(event) => { event.stopPropagation(); onOpen({ kind, id }) }} className="inline-flex max-w-full min-w-0 items-center gap-1 rounded font-mono text-[11px] font-semibold text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
       <span className="truncate">{label ?? id}</span><ExternalLink aria-hidden="true" className="h-3 w-3 shrink-0" />
-    </button>
+    </button> : <span role="note" aria-label={`${kind} ${id} 不可导航`} className="select-text break-all font-mono text-[11px] text-muted">{label ?? id} · 不可导航</span>}
+    {copyable && <button type="button" aria-label={`复制 ${kind === 'trace' ? 'Trace' : 'Session'} ID`} onClick={event => { event.stopPropagation(); void copy() }} className="shrink-0 rounded p-1 text-muted hover:bg-slate-100"><Copy aria-hidden="true" className="h-3 w-3" /></button>}
+    {copyMessage && <span role="status" className="select-text break-all text-[10px] text-muted">{copyMessage}{copyMessage.startsWith('复制失败') && ` · ${kind}: ${id}`}</span>}
+    </span>
   )
 }
 

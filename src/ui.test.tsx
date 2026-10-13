@@ -1,9 +1,23 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
+import { useState } from 'react'
 import { BarChartView } from './charts'
-import { Button, DataTable, Drawer, EmptyState } from './ui'
+import { Button, DataTable, Drawer, EmptyState, Modal } from './ui'
 
 describe('dashboard primitives', () => {
+  it('closes only the topmost nested layer on Escape',()=>{
+    const parent=vi.fn(),child=vi.fn()
+    render(<Drawer open onClose={parent} title="Case"><Modal open onClose={child} title="复核">输入</Modal></Drawer>)
+    fireEvent.keyDown(screen.getByRole('dialog',{name:'复核'}),{key:'Escape'})
+    expect(child).toHaveBeenCalledOnce();expect(parent).not.toHaveBeenCalled()
+  })
+  it('returns focus to a still-open Case after dismissing an initially open child',()=>{
+    function Layers(){const [open,setOpen]=useState(true);return <Drawer open onClose={()=>{}} title="Case"><Modal open={open} onClose={()=>setOpen(false)} title="复核">输入</Modal></Drawer>}
+    render(<Layers/>);fireEvent.keyDown(screen.getByRole('dialog',{name:'复核'}),{key:'Escape'})
+    const parent=screen.getByRole('dialog',{name:'Case'})
+    expect(screen.queryByRole('dialog',{name:'复核'})).not.toBeInTheDocument()
+    expect(parent.contains(document.activeElement)).toBe(true)
+  })
   it('renders an empty state and keyboard-friendly button', () => {
     const action = vi.fn()
     render(<><EmptyState title="No records" description="Nothing matches." /><Button onClick={action}>Open</Button></>)

@@ -1,0 +1,24 @@
+$ playwright test e2e/module-direction-history.spec.ts e2e/trace-four-tabs-timeline.spec.ts e2e/trace-case-dedup-human-review.spec.ts --output=/tmp/three-tabs-final-browser4
+[WebServer] (node:26634) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 14 tests using 1 worker
+
+(node:26641) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 [chromium] › e2e/module-direction-history.spec.ts:5:1 › 点击模块直接查看不同方向及完整历史，方向刷新和返回可恢复 (6.0s)
+  ✓   2 [chromium] › e2e/module-direction-history.spec.ts:50:1 › 模块行点击不打开Evidence，明确Evidence按钮仍可独立使用 (2.2s)
+  ✓   3 [chromium] › e2e/module-direction-history.spec.ts:61:1 › 关闭详情后恢复完整 Case / Trace 列表范围 (1.6s)
+  ✓   4 [chromium] › e2e/trace-case-dedup-human-review.spec.ts:6:1 › 长数字身份、精确非主 Trace 与旧链接兼容 (3.0s)
+  ✓   5 [chromium] › e2e/trace-case-dedup-human-review.spec.ts:22:1 › 完整 PPT 链路：Evidence、两次复核、刷新、数据集与发布反查 (6.6s)
+  ✓   6 [chromium] › e2e/trace-case-dedup-human-review.spec.ts:66:1 › 旧治理链接进入评测中心、未评测兄弟 Trace 不继承发布 (4.3s)
+  ✓   7 [chromium] › e2e/trace-case-dedup-human-review.spec.ts:82:1 › 数据集样本治理入口与固定版本返回上下文 (1.9s)
+  ✓   8 [chromium] › e2e/trace-case-dedup-human-review.spec.ts:94:33 › 1280px 长 ID、所有 Tab、矩阵、复核与并行时间线布局 (4.5s)
+  ✓   9 [chromium] › e2e/trace-case-dedup-human-review.spec.ts:94:33 › 1440px 长 ID、所有 Tab、矩阵、复核与并行时间线布局 (4.2s)
+  ✓  10 [chromium] › e2e/trace-four-tabs-timeline.spec.ts:5:1 › Trace列表单一最新状态、三个Tab和模块内默认折叠 (1.6s)
+  ✓  11 [chromium] › e2e/trace-four-tabs-timeline.spec.ts:26:1 › 过程评分去重、产物细项隔离、两次人工复核刷新与冻结保护 (4.0s)
+  ✓  12 [chromium] › e2e/trace-four-tabs-timeline.spec.ts:68:1 › 旧节点链接和未评测兄弟Trace保持独立 (2.5s)
+  ✓  13 [chromium] › e2e/trace-four-tabs-timeline.spec.ts:82:32 › 1280px 三Tab及归因折叠、评分操作无重叠 (5.3s)
+  ✓  14 [chromium] › e2e/trace-four-tabs-timeline.spec.ts:82:32 › 1440px 三Tab及归因折叠、评分操作无重叠 (5.5s)
+
+  14 passed (55.7s)

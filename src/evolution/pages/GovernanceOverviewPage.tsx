@@ -1,156 +1,97 @@
-import { ArrowRight, Gauge, ShieldAlert, Timer } from 'lucide-react'
-import { useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { Drawer, SectionHeader, StatusBadge } from '../../ui'
+import { ArrowRight, ExternalLink } from 'lucide-react'
+import { useMemo, type ReactNode } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import { useScopedEvolution } from '../scope'
-import { selectEvolutionFunnel, selectEvolutionMonitoring, selectMonitoringDrilldown, selectOverviewCaseMetrics, type MonitoringSignal } from '../data/selectors'
-import { OverviewQualitySections } from '../components/OverviewQualitySections'
-import { IdLink, MetricTile, MockBoundary, PageHeading, type ReferenceKind } from '../components/ViewPrimitives'
-import { entities, Section, text, type AnyState } from './shared'
-import { DETAIL_KEYS, useContextNavigation } from '../../layout'
-import { AnomalyMonitoringPage } from '../../anomalyMonitoringPage'
+import { MockBoundary } from '../components/ViewPrimitives'
+import { selectOverviewDashboard, OVERVIEW_METRIC_DEFINITIONS, OVERVIEW_PRODUCT_TYPES } from '../data/overviewDashboard'
+import { Section } from './shared'
+import { SectionHeader } from '../../ui'
+import { useContextNavigation } from '../../layout'
+import { GLOBAL_FILTER_KEYS } from '../../urlState'
 
-const unitLabel: Record<string, string> = { Case: 'Case', '问题': '问题', '变体': '变体', '实验': '实验', '决策': '决策' }
+const QA_URL = 'https://autoeval.baidu-int.com/tasks'
+const numberText = (value: number) => value.toLocaleString('zh-CN')
+const decimalText = (value?: number) => value === undefined ? '暂无数据' : value.toFixed(2)
+const timeText = (value?: number, seconds = false) => value === undefined ? '暂无埋点' : (seconds ? (value / 1000).toFixed(2) : Math.round(value).toLocaleString('zh-CN'))
 
-export function GovernanceOverviewPage() {
-  const [searchParams] = useSearchParams()
-  if (searchParams.get('view') === 'monitoring') return <div><div className="mb-3 rounded-md border border-accent/20 bg-accent/5 px-3 py-2 text-xs text-accent">线上监控视图 · 当前仍属于治理总览页面，可通过左侧“治理总览”返回总览。</div><AnomalyMonitoringPage /></div>
-  return <GovernanceOverviewContent />
+function SummaryMetric({ label, value, note, definition, onClick }: { label: string; value: ReactNode; note: ReactNode; definition?: string; onClick?: () => void }) {
+  const body = <><div className="flex items-start justify-between gap-2"><p className="text-xs font-medium text-muted" title={definition}>{label}</p>{onClick && <ArrowRight aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-slate-400"/>}</div><p className="mt-3 text-2xl font-semibold tracking-tight text-ink">{value}</p><div className="mt-2 text-[10px] leading-5 text-muted">{note}</div></>
+  const className = 'min-w-0 rounded-lg border border-line bg-white p-4 text-left' + (onClick ? ' transition hover:border-accent/40 hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent' : '')
+  return onClick ? <button type="button" onClick={onClick} className={className}>{body}</button> : <div className={className}>{body}</div>
 }
 
-function GovernanceOverviewContent() {
-  const { scopedState: state } = useScopedEvolution()
-  const data = state as unknown as AnyState
-  const cases = entities(data, 'cases')
-  const processEvals = entities(data, 'processEvals')
-  const outcomeEvals = entities(data, 'outcomeEvals')
-  const issues = entities(data, 'issues')
-  const batches = entities(data, 'evaluationBatches')
-  const packages = entities(data, 'tracePackages')
-  const deliveries = entities(data, 'routingDeliveries')
-  const badcaseItems = entities(data, 'algorithmBadcases')
-  const [selectedFunnel, setSelectedFunnel] = useState<ReturnType<typeof selectEvolutionFunnel>[number]>()
-  const [distribution, setDistribution] = useState<{ title: string; ids: string[] }>()
+/** Three independent dashboards share the selected Case/Trace scope. */
+export function GovernanceOverviewPage() {
+  const { state, scopedState } = useScopedEvolution()
+  const location = useLocation()
   const { navigateContext } = useContextNavigation()
-  const funnel = selectEvolutionFunnel(state)
-  const evaluatedCases = new Set([...processEvals, ...outcomeEvals].map((item) => text(item.caseId, ''))).size
-  const caseMetrics = selectOverviewCaseMetrics(state)
-  const badcaseIds = caseMetrics.badcaseIds
-  const badcases = badcaseIds.length
-  const performance = useMemo(() => selectEvolutionMonitoring(state), [state])
-  const v2Performance = useMemo(() => selectEvolutionMonitoring(state, true), [state])
-  const moduleCounts = ['Reason', 'Memory', 'Skill', 'Act'].map((module) => ({ module, count: issues.filter((item) => text(item.module) === module).length }))
-  const maxModule = Math.max(1, ...moduleCounts.map((item) => item.count))
-  const skillCategories = ['PRODUCTION_SKILL', 'GENERAL', 'PERSONAL_SKILL', 'TASTE_SKILL', 'UNCLASSIFIED']
-  const skillCategoryLabels: Record<string, string> = { PRODUCTION_SKILL: '生产 Skill', GENERAL: '通用 Skill', PERSONAL_SKILL: 'Personal Skill', TASTE_SKILL: '品味 Skill', UNCLASSIFIED: '未分类' }
-  const skillCategoryCounts = skillCategories.map((category) => ({ category, count: packages.filter((item) => text(item.skillCategory) === category).length }))
-  const maxSkillCategory = Math.max(1, ...skillCategoryCounts.map((item) => item.count))
-  const evaluationCoverage = packages.length ? { complete: packages.filter((item) => text(item.processCoverage) === 'COMPLETE' && text(item.outcomeCoverage) === 'COMPLETE').length, partial: packages.filter((item) => text(item.status) === 'PARTIAL' || text(item.processCoverage) === 'PARTIAL' || text(item.outcomeCoverage) === 'PARTIAL').length, failed: packages.filter((item) => text(item.status) === 'FAILED').length } : { complete: 0, partial: 0, failed: 0 }
-  const routingSummary = { pending: deliveries.filter((item) => ['PENDING', 'QUEUED'].includes(text(item.status))).length, delivered: deliveries.filter((item) => ['DELIVERED', 'ACKNOWLEDGED', 'RESOLVED'].includes(text(item.status))).length, badcase: badcaseItems.filter((item) => text(item.status) !== 'REJECTED').length }
-  const openFunnelObject = (id: string) => {
-    const target = selectedFunnel?.unit === 'Case' ? ['/cases', 'caseId'] : selectedFunnel?.unit === '问题' ? ['/issues', 'issueId'] : selectedFunnel?.unit === '变体' ? ['/variants', 'variantId'] : selectedFunnel?.unit === '实验' ? ['/experiments', 'experimentId'] : ['/experiments', 'decisionId']
-    navigateContext(target[0], { clear: DETAIL_KEYS, params: { [target[1]]: id } })
+  const dashboard = useMemo(() => selectOverviewDashboard(state, scopedState), [state, scopedState])
+  const { outcome, assets, process } = dashboard
+  const quality = process.quality.filter(row => row.independentScoring)
+  const contextParams = new URLSearchParams()
+  const currentParams = new URLSearchParams(location.search)
+  GLOBAL_FILTER_KEYS.forEach(key => { const value = currentParams.get(key); if (value) contextParams.set(key, value) })
+  const contextUrl = (path: string) => path + (contextParams.size ? '?' + contextParams.toString() : '')
+  const assetUrl = contextUrl('/assets-skills')
+  const openCases = (caseIds: string[], traceIds: string[] = [], extra: Record<string, string> = {}) => {
+    if (!caseIds.length) return
+    const kept = Object.fromEntries(contextParams)
+    navigateContext('/cases', {
+      clear: [...currentParams.keys()].filter(key => !GLOBAL_FILTER_KEYS.includes(key as typeof GLOBAL_FILTER_KEYS[number])),
+      params: { ...kept, caseClosed: '1', caseSet: [...new Set(caseIds)].join(','), ...(traceIds.length ? { traceSet: [...new Set(traceIds)].join(',') } : {}), returnTo: location.pathname + location.search, ...extra }
+    })
   }
-  const funnelKind = (): ReferenceKind => selectedFunnel?.unit === 'Case' ? 'case' : selectedFunnel?.unit === '问题' ? 'issue' : selectedFunnel?.unit === '变体' ? 'variant' : selectedFunnel?.unit === '实验' ? 'experiment' : 'decision'
-  const openDistributionObject = (id: string) => {
-    const badcase = distribution?.title.includes('Badcase')
-    navigateContext(badcase ? '/cases' : '/issues', { clear: DETAIL_KEYS, params: { [badcase ? 'caseId' : 'issueId']: id } })
+  const openHistoricalSources = () => {
+    const traceIds = new Set(assets.usedTraceIds)
+    const caseIds = state.traces.filter(trace => traceIds.has(trace.id)).map(trace => trace.caseId)
+    openCases(caseIds, assets.usedTraceIds, { timeRange: 'all' })
   }
-  const openCases = (ids: string[], paramsPatch: Record<string, string> = {}) => {
-    navigateContext('/cases', { clear: DETAIL_KEYS, params: { ...paramsPatch, caseId: ids.length === 1 ? ids[0] : undefined, caseSet: ids.length === 1 ? undefined : ids.join(',') } })
-  }
-  const openSignal = (signal: MonitoringSignal) => {
-    const source = selectMonitoringDrilldown(state, signal)
-    openCases(source.caseIds, { signal, traceId: source.traceIds.length === 1 ? source.traceIds[0] : '', traceSet: source.traceIds.length > 1 ? source.traceIds.join(',') : '' })
-  }
-  const openBatch = (batchId?: string) => navigateContext('/evaluations', { clear: DETAIL_KEYS, params: batchId ? { batchId } : {} })
-  const openRouting = (status = 'PENDING') => navigateContext('/issues', { clear: DETAIL_KEYS, params: { routingStatus: status } })
+  const knownFeedback = outcome.adoption.acceptedCaseIds.length + outcome.adoption.rejectedCaseIds.length
+  const ratingCount = outcome.scoreDistribution.reduce((sum, bucket) => sum + bucket.count, 0)
 
-  return (
-    <div>
-      <PageHeading eyebrow="SELF-EVOLUTION GOVERNANCE" title="治理总览" description="从线上质量与性能异常进入 Case，并沿问题、变体、实验与发布链路完成闭环治理。所有数字均来自本地结构化 Mock 数据。" />
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricTile label="线上任务量" value={cases.length} note="统计单位：Case" />
-        <MetricTile label="结果有效率" value={caseMetrics.result.denominator ? `${Math.round(caseMetrics.result.rate * 100)}%` : '暂无数据'} note={`${caseMetrics.result.numerator}/${caseMetrics.result.denominator} 个已评测 Case 通过 · ${caseMetrics.result.missingCaseIds.length} 个缺失评测`} tone="pass" onClick={() => openCases(caseMetrics.result.failedCaseIds, { outcomeEval: 'FAIL' })} />
-        <MetricTile label="过程评测表现" value={caseMetrics.process.denominator ? `${Math.round(caseMetrics.process.rate * 100)}%` : '暂无数据'} note={`${caseMetrics.process.numerator}/${caseMetrics.process.denominator} 个已评测 Case 通过 · ${caseMetrics.process.missingCaseIds.length} 个缺失评测`} onClick={() => openCases(caseMetrics.process.failedCaseIds, { processEval: 'FAIL' })} />
-        <MetricTile label="Badcase" value={badcases} onClick={() => setDistribution({ title: 'Badcase 分布', ids: badcaseIds })} note={`${issues.length} 个独立问题，Case 可对应多个问题`} tone="fail" />
+  return <div className="space-y-4">
+    <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs leading-6 text-muted">当前筛选范围内的产物、资产与过程表现；统计单位及口径分别保留。</p><MockBoundary/></div>
+
+    <Section>
+      <SectionHeader title="产物结果大盘" description="Case 去重统计。产物评分直接使用最终评测返回的 0 / 1 / 2 分。" actions={<a href={QA_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:underline">前往 QA 平台<ExternalLink className="h-3.5 w-3.5" aria-hidden="true"/></a>}/>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <SummaryMetric label="总 Case 数" value={numberText(outcome.totalCaseIds.length)} note="单位：Case" definition="当前筛选范围内的任务，按 Case ID 去重。" onClick={outcome.totalCaseIds.length ? () => openCases(outcome.totalCaseIds) : undefined}/>
+        <SummaryMetric label="有产物结果的 Case" value={numberText(outcome.resultCaseIds.length)} note={'占总 Case ' + (outcome.totalCaseIds.length ? (outcome.resultCaseIds.length / outcome.totalCaseIds.length * 100).toFixed(1) + '%' : '暂无数据')} definition={OVERVIEW_METRIC_DEFINITIONS.resultCases} onClick={outcome.resultCaseIds.length ? () => openCases(outcome.resultCaseIds) : undefined}/>
+        {outcome.scoreDistribution.map(bucket => <SummaryMetric key={bucket.score} label={bucket.score + ' 分'} value={numberText(bucket.count)} note={'占整数评分 Case ' + (ratingCount ? (bucket.count / ratingCount * 100).toFixed(1) + '%' : '暂无评测')} definition={OVERVIEW_METRIC_DEFINITIONS.scoreDistribution} onClick={bucket.caseIds.length ? () => openCases(bucket.caseIds) : undefined}/>)}
+        <SummaryMetric label="采纳率" value={outcome.adoption.rate === undefined ? '暂无反馈' : (outcome.adoption.rate * 100).toFixed(1) + '%'} note={outcome.adoption.acceptedCaseIds.length + ' 已采纳 / ' + knownFeedback + ' 有明确反馈'} definition={OVERVIEW_METRIC_DEFINITIONS.adoption} onClick={knownFeedback ? () => openCases([...outcome.adoption.acceptedCaseIds, ...outcome.adoption.rejectedCaseIds]) : undefined}/>
       </div>
+      <p className="mt-3 text-[10px] leading-5 text-muted">{outcome.missingScoreCaseIds.length} 个 Case 尚无最终评分；{outcome.adoption.missingCaseIds.length} 个 Case 无采纳事件，不计入采纳率分母。{outcome.nonDiscreteCaseIds.length > 0 && '历史小数评分 ' + outcome.nonDiscreteCaseIds.length + ' 个 Case 保留原值，不强行归入 0 / 1 / 2 分档。'}</p>
+    </Section>
 
-      <OverviewQualitySections state={state} onOpenCases={openCases} onOpenEvaluations={(params) => navigateContext('/evaluations', { clear: DETAIL_KEYS, params })} onOpenModule={(moduleCode) => {
-        const source = state.tracePackages.filter((pkg) => pkg.moduleScores.some((score) => score.moduleCode === moduleCode && score.automaticStatus === 'FAIL' && score.evidence.firstFailure && !score.evidence.derivedFailure))
-        if (!source.length) { navigateContext('/evaluations', { clear: DETAIL_KEYS, params: { evaluationTab: 'traces', moduleCode } }); return }
-        openCases([...new Set(source.map((pkg) => pkg.caseId))], { traceSet: source.map((pkg) => pkg.traceId).join(',') })
-      }} />
-
-      <Section className="mt-4">
-        <SectionHeader eyebrow="EVALUATION & ROUTING" title="批量评测覆盖与数据分流" description="按 Trace Package 与 Delivery 统计，批次和分流阶段保持独立分母；点击卡片进入评测批次或分流台账。" />
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricTile label="评测批次" value={batches.length} note={`${batches.filter((item) => ['RUNNING', 'QUEUED'].includes(text(item.status))).length} 个运行中 / 排队`} onClick={() => openBatch()} />
-          <MetricTile label="Trace 评测覆盖" value={packages.length ? `${Math.round(packages.filter((item) => text(item.status) === 'EVALUATED').length / packages.length * 100)}%` : '暂无数据'} note={`${packages.length} 条 Trace Package；${evaluationCoverage.complete} 条过程 + 产物完整`} onClick={() => openBatch()} tone="pass" />
-          <MetricTile label="部分完成 / 失败" value={`${evaluationCoverage.partial} / ${evaluationCoverage.failed}`} note="缺失 Evidence 或批次失败不虚构结论" onClick={() => openBatch()} tone="warn" />
-          <MetricTile label="Routing Delivery" value={deliveries.length} note={`${routingSummary.pending} 待处理 · ${routingSummary.delivered} 已交付 · ${routingSummary.badcase} 算法候选`} onClick={() => openRouting()} />
-        </div>
-        <div className="mt-5 grid gap-5 lg:grid-cols-[1.2fr_1fr]">
-          <div>
-            <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-semibold text-ink">评测与分流漏斗</h3><span className="text-[10px] text-muted">单位：Trace / Delivery / Badcase</span></div>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-              {[{ label: '输入 Trace', value: batches.reduce((sum, item) => sum + (typeof item.stats === 'object' && item.stats ? Number((item.stats as Record<string, unknown>).inputTraceCount ?? 0) : 0), 0) || packages.length, kind: 'evaluation' }, { label: '已完成评测', value: packages.filter((item) => text(item.status) === 'EVALUATED').length, kind: 'evaluation' }, { label: '确认 Finding', value: packages.reduce((sum, item) => sum + (Array.isArray(item.findingIds) ? item.findingIds.length : 0), 0), kind: 'finding' }, { label: '已分流', value: routingSummary.delivered, kind: 'routing' }, { label: '算法 Badcase', value: routingSummary.badcase, kind: 'badcase' }].map((item) => <button key={item.label} type="button" aria-label={`查看${item.kind === 'badcase' ? '算法候选队列' : item.label}明细`} onClick={() => item.kind === 'routing' ? openRouting() : item.kind === 'badcase' ? navigateContext('/issues', { clear: DETAIL_KEYS, params: { badcaseStatus: 'CANDIDATE' } }) : openBatch()} className="rounded-md border border-line bg-slate-50/70 p-3 text-left transition hover:border-accent/40 hover:bg-accent/5"><p className="text-[11px] font-medium text-muted">{item.label}</p><p className="mt-2 text-xl font-semibold text-ink">{item.value}</p><p className="mt-1 text-[10px] text-accent">查看明细 →</p></button>)}
-            </div>
-          </div>
-          <div>
-            <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-semibold text-ink">Skill Category 分布</h3><span className="text-[10px] text-muted">单位：Trace Package</span></div>
-            <div className="space-y-2">{skillCategoryCounts.map((item) => <button type="button" key={item.category} onClick={() => openBatch()} className="block w-full text-left"><div className="mb-1 flex justify-between text-[11px]"><span className="text-ink">{skillCategoryLabels[item.category]}</span><span className="text-muted">{item.count}</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-accent" style={{ width: `${item.count / maxSkillCategory * 100}%` }} /></div></button>)}</div>
-          </div>
-        </div>
-        {batches.length > 0 && <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[720px] text-left text-xs"><thead className="border-b border-line text-[10px] uppercase tracking-wide text-muted"><tr><th className="px-2 py-2">Batch</th><th className="px-2 py-2">状态</th><th className="px-2 py-2 text-right">输入 Trace</th><th className="px-2 py-2 text-right">完成 / 部分 / 失败</th><th className="px-2 py-2">Eval Agent / Rubric</th></tr></thead><tbody className="divide-y divide-slate-100">{batches.slice(0, 5).map((batch) => { const stats = typeof batch.stats === 'object' && batch.stats ? batch.stats as Record<string, unknown> : {}; const inputCount = typeof stats.inputTraceCount === 'number' ? stats.inputTraceCount : Array.isArray(batch.traceIds) ? batch.traceIds.length : 0; return <tr key={batch.id} className="cursor-pointer hover:bg-slate-50" onClick={() => openBatch(batch.id)}><td className="px-2 py-2"><IdLink id={batch.id} kind="evaluation-batch" onOpen={() => openBatch(batch.id)} label={text(batch.name, batch.id)} /></td><td className="px-2 py-2"><StatusBadge status={text(batch.status)} /></td><td className="px-2 py-2 text-right tabular-nums">{inputCount}</td><td className="px-2 py-2 text-right tabular-nums">{Number(stats.successCount ?? 0)} / {Number(stats.partialCount ?? 0)} / {Number(stats.failedCount ?? 0)}</td><td className="px-2 py-2 text-muted">{text(batch.evalAgentVersion)} · {text(batch.rubricVersion)}</td></tr>})}</tbody></table></div>}
-      </Section>
-
-      <Section className="mt-4">
-        <SectionHeader eyebrow="EVOLUTION FUNNEL" title="进化漏斗" description="各阶段按对象类型独立计数。跨单位阶段仅展示存量，不直接计算转化率，避免将 Case、问题、变体和实验混用分母。" />
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
-          {funnel.map((step, index) => (
-            <button key={step.id} type="button" onClick={() => setSelectedFunnel(step)} aria-label={`${step.label}，${step.count}，单位：${unitLabel[step.unit] ?? step.unit}`} className="group relative min-w-0 rounded-md border border-line bg-slate-50/70 p-3 text-left transition hover:border-accent/40 hover:bg-accent/5">
-              <div className="flex items-start justify-between gap-1"><span className="text-[11px] font-semibold leading-4 text-ink">{step.label}</span><ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-400 group-hover:text-accent" /></div>
-              <p className="mt-3 text-2xl font-semibold text-ink">{step.count}</p>
-              <p className="mt-1 text-[10px] text-muted">单位：{unitLabel[step.unit] ?? step.unit}</p>
-              {index < funnel.length - 1 && <span aria-hidden="true" className="absolute -right-2 top-1/2 z-10 hidden -translate-y-1/2 text-slate-300 xl:block">›</span>}
-            </button>
-          ))}
-        </div>
-        <p className="mt-3 text-[11px] text-muted">说明：一个 Case 可产生多个问题；一个问题可进入直接修复或问题簇，并可命中多条分流路径。</p>
-      </Section>
-
-      <div className="mt-4 grid gap-4 xl:grid-cols-2">
-        <Section>
-          <SectionHeader eyebrow="MODULE ATTRIBUTION" title="模块问题分布" description="按已确认问题计数；点击后由主路由进入归因明细。" />
-          <div className="mt-4 space-y-3">{moduleCounts.map((item) => <button type="button" aria-label={item.module + ' 模块问题'} onClick={() => setDistribution({ title: item.module + ' 模块问题', ids: issues.filter((issue) => text(issue.module) === item.module).map((issue) => issue.id) })} className="block w-full text-left" key={item.module}><div className="mb-1.5 flex justify-between text-xs"><span className="font-medium text-ink">{item.module}</span><span className="text-muted">{item.count} 个问题</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-fail" style={{ width: `${item.count / maxModule * 100}%` }} /></div></button>)}</div>
-        </Section>
-        <Section>
-          <SectionHeader eyebrow="ONLINE MONITORING" title="性能与安全原始信号" description="预期耗时与成本基线尚未建立时，只展示原始观测值，不生成效率结论。" />
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <MetricTile label="平均总耗时" value={performance.traceCount ? `${Math.round(performance.latencyMs.average)} ms` : '暂无数据'} note={<StatusBadge status="基线待配置" tone="neutral" showIcon={false} />} onClick={() => openSignal('latency')} />
-            <MetricTile label="首 Token 时间" value={performance.traceCount ? `${Math.round(performance.ttftMs.average)} ms` : '暂无数据'} note={<StatusBadge status="基线待配置" tone="neutral" showIcon={false} />} onClick={() => openSignal('ttft')} />
-            <MetricTile label="输入 / 输出 Token" value={`${performance.tokens.input} / ${performance.tokens.output}`} note="一期记录原始成本信号" />
-            <MetricTile label="Tool 调用" value={performance.toolCallCount} note="同时保留一次执行、Retry 与 Loop 记录" />
-            <MetricTile label="Model Call" value={v2Performance.modelCallCount} note="全量 Trace 原始调用次数" />
-            <MetricTile label="模型耗时" value={v2Performance.model.latencyMs.average ? `${Math.round(v2Performance.model.latencyMs.average)} ms` : 'UNKNOWN'} note={v2Performance.model.latencyMs.average ? '原始观测；基线待配置' : '模型耗时埋点未覆盖'} />
-            <MetricTile label="模型吞吐量" value={v2Performance.model.throughputTokensPerSecond ? `${v2Performance.model.throughputTokensPerSecond.toFixed(1)} token/s` : 'UNKNOWN'} note={v2Performance.model.throughputTokensPerSecond ? '原始观测；基线待配置' : '模型吞吐埋点未覆盖'} />
-            <MetricTile label="缓存命中" value={`${performance.cache.hitCount} / ${performance.cache.requestCount}`} note={`${Math.round(performance.cache.hitRate * 100)}% · 基线待配置`} />
-            <MetricTile label="Tool 调用频率" value={performance.toolFrequency[0] ? `${performance.toolFrequency[0].toolName} ${Math.round(performance.toolFrequency[0].frequency * 100)}%` : '本窗口无调用'} note="按单 Tool / Tool 总调用量展示" onClick={() => openSignal('tool-frequency')} />
-            <MetricTile label="Tool 一次执行成功率" value={performance.toolOneShot.executionCount ? `${Math.round(performance.toolOneShot.successRate * 100)}%` : '暂无数据'} note="Retry / Recovery 成功不纳入分子" onClick={() => openSignal('tool-one-shot')} />
-            <MetricTile label="Loop / Retry" value={`${performance.loopCount} / ${performance.retryCount}`} note="一期记录原始次数" />
-          </div>
-          <p className="mt-3 text-[11px] font-semibold text-muted">TTFT P50 / P90 / P95</p><p className="text-xs text-ink">{performance.ttftMs.p50} / {performance.ttftMs.p90} / {performance.ttftMs.p95} ms</p><div className="mt-3 grid gap-2 sm:grid-cols-3"><button type="button" onClick={() => openSignal('risk')} className="rounded-md bg-slate-50 p-3 text-left text-xs"><ShieldAlert className="mb-2 h-4 w-4 text-fail" />风控拦截率 {Math.round(performance.risk.rate * 100)}%<br/><span className="text-[11px] text-muted">{performance.risk.reasonDistribution.map((item) => `${item.reason} ${item.count}`).join('、') || '暂无拦截'}</span></button><button type="button" onClick={() => openSignal('commercial')} className="rounded-md bg-slate-50 p-3 text-left text-xs"><Gauge className="mb-2 h-4 w-4 text-accent" />商业化拦截率 {Math.round(performance.commercial.rate * 100)}%<br/><span className="text-[11px] text-muted">{performance.commercial.reasonDistribution.map((item) => `${item.reason} ${item.count}`).join('、') || '暂无拦截'}</span></button><button type="button" onClick={() => openSignal('latency-percentiles')} className="rounded-md bg-slate-50 p-3 text-left text-xs"><Timer className="mb-2 h-4 w-4 text-warn" />P50 / P90 / P95<br/><span className="text-[11px] text-muted">{performance.latencyMs.p50} / {performance.latencyMs.p90} / {performance.latencyMs.p95} ms</span></button></div>
-        </Section>
+    <Section>
+      <SectionHeader title="资产大盘" description="资产按资产 ID 去重，进化项按固定版本、归因与独立轮次计数，Trace 按来源 ID 去重。" actions={<Link to={assetUrl} className="inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:underline">查看资产管理<ArrowRight className="h-3.5 w-3.5" aria-hidden="true"/></Link>}/>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <SummaryMetric label="已进化资产" value={numberText(assets.evolvedAssetIds.length)} note="已灰度、正式发布或观察中" definition={OVERVIEW_METRIC_DEFINITIONS.evolvedAssets}/>
+        <SummaryMetric label="进化项" value={numberText(assets.evolutionRecordIds.length)} note="同一轮次多条分流不重复计数" definition={OVERVIEW_METRIC_DEFINITIONS.evolutionItems}/>
+        <SummaryMetric label="贡献 Trace" value={numberText(assets.usedTraceIds.length)} note="曾用于进化的历史来源" definition={OVERVIEW_METRIC_DEFINITIONS.usedTraces} onClick={assets.usedTraceIds.length ? openHistoricalSources : undefined}/>
+        <SummaryMetric label="待进化项" value={numberText(assets.pendingEvolutionRecordIds.length)} note="触发条件已确认、尚未发布" definition={OVERVIEW_METRIC_DEFINITIONS.pendingEvolution}/>
+        <SummaryMetric label="进化后线上产物平均分" value={assets.postEvolutionAverage === undefined ? '暂无上线后评测' : assets.postEvolutionAverage.toFixed(2) + ' / 2'} note={assets.postEvolutionSampleCount + ' 条发布后线上 Trace'} definition={OVERVIEW_METRIC_DEFINITIONS.postEvolution} onClick={assets.postEvolutionTraceIds.length ? () => openCases(state.traces.filter(trace => assets.postEvolutionTraceIds.includes(trace.id)).map(trace => trace.caseId), assets.postEvolutionTraceIds) : undefined}/>
       </div>
+      <p className="mt-3 text-[10px] leading-5 text-muted">待确认触发条件或规则未配置：{assets.pendingRuleRecordIds.length} 项，单列、不计为已满足进化条件。线上表现仅来自对应版本发布后的线上任务，来源 Trace 可能早于当前窗口。</p>
+    </Section>
 
-      <Drawer open={Boolean(selectedFunnel)} onClose={() => setSelectedFunnel(undefined)} title={`${selectedFunnel?.label ?? ''} 明细`} description={`统计单位：${selectedFunnel?.unit ?? ''}；共 ${selectedFunnel?.count ?? 0} 条。`}>
-        <div className="space-y-2">{selectedFunnel?.detailIds.length ? selectedFunnel.detailIds.map((id) => <div key={id} className="rounded-md border border-line p-3"><IdLink id={id} kind={funnelKind()} onOpen={() => openFunnelObject(id)} /></div>) : <p className="text-xs text-muted">当前阶段暂无对象。</p>}</div>
-      </Drawer>
-      <p className="sr-only">TTFT P50 / P90 / P95：{performance.ttftMs.p50} / {performance.ttftMs.p90} / {performance.ttftMs.p95} ms</p>
-      <Drawer open={Boolean(distribution)} onClose={() => setDistribution(undefined)} title={distribution?.title ?? '分布明细'} description={`${distribution?.ids.length ?? 0} 条关联对象`}>
-        <div className="space-y-2">{distribution?.ids.map((id) => <div key={id} className="rounded border p-2"><IdLink id={id} kind={distribution.title.includes('Badcase') ? 'case' : 'issue'} onOpen={() => openDistributionObject(id)} /></div>)}</div>
-      </Drawer>
-    </div>
-  )
+    <Section>
+      <SectionHeader title="过程大盘" description="效率与质量按 PPT、Word、Excel、生图分别展示；平均分统一为 0–2。"/>
+      <h3 className="mt-5 text-xs font-semibold text-ink">效率</h3>
+      <div className="mt-3 overflow-x-auto rounded-lg border border-line">
+        <table aria-label="按产物类型的过程效率" className="w-full min-w-[700px] text-left text-xs">
+          <thead className="border-b border-line bg-slate-50 text-[11px] text-muted"><tr><th className="px-4 py-3">产物类型</th><th className="px-4 py-3">Trace 数</th><th className="px-4 py-3">平均首 Token（ms）</th><th className="px-4 py-3">平均耗时（s）</th><th className="px-4 py-3">Token 消耗（累计）</th><th className="px-4 py-3">平均 Token / Trace</th></tr></thead>
+          <tbody className="divide-y divide-line">{process.efficiency.map(row => <tr key={row.type} className="hover:bg-slate-50/50"><th scope="row" className="px-4 py-3 font-semibold">{row.caseIds.length ? <button type="button" aria-label={'查看 ' + row.type + ' 过程 Trace'} onClick={() => openCases(row.caseIds, row.traceIds, { verticalScenario: row.type })} className="text-accent hover:underline">{row.type}</button> : row.type}</th><td className="px-4 py-3 tabular-nums">{numberText(row.traceIds.length)}</td><td className="px-4 py-3 tabular-nums" title={row.ttftSampleCount + ' 条埋点样本'}>{timeText(row.ttftAverageMs)}</td><td className="px-4 py-3 tabular-nums" title={row.latencySampleCount + ' 条埋点样本'}>{timeText(row.latencyAverageMs, true)}</td><td className="px-4 py-3 tabular-nums">{row.tokenSampleCount ? numberText(row.tokenTotal) : '暂无埋点'}</td><td className="px-4 py-3 tabular-nums">{row.tokenAverage === undefined ? '暂无埋点' : numberText(Math.round(row.tokenAverage))}</td></tr>)}</tbody>
+        </table>
+      </div>
+      <h3 className="mt-5 text-xs font-semibold text-ink">质量 · 归因模块平均分</h3>
+      <div className="mt-3 overflow-x-auto rounded-lg border border-line">
+        <table aria-label="按产物类型的过程质量" className="w-full min-w-[640px] text-left text-xs">
+          <thead className="border-b border-line bg-slate-50 text-[11px] text-muted"><tr><th className="px-4 py-3">归因模块</th>{OVERVIEW_PRODUCT_TYPES.map(type => <th key={type} className="px-4 py-3">{type}</th>)}</tr></thead>
+          <tbody className="divide-y divide-line">{quality.map(row => <tr key={row.moduleCode}><th scope="row" className="px-4 py-3 font-semibold">{row.label}</th>{row.byType.map(value => <td key={value.type} className="px-4 py-3">{value.average === undefined ? <span className="text-muted">暂无评分</span> : <button type="button" aria-label={'查看 ' + value.type + ' ' + row.label + ' 评分明细'} onClick={() => openCases(value.caseIds, value.traceIds, { verticalScenario: value.type, caseView: 'eval', moduleCode: row.moduleCode })} title={value.sampleCount + ' 条已计分 Trace'} className="w-full max-w-[150px] text-left hover:text-accent"><div className="flex items-center justify-between gap-2"><span className="font-semibold tabular-nums">{decimalText(value.average)} / 2</span><span className="text-[10px] text-muted">{value.sampleCount} 条</span></div><div className="mt-2 h-1 rounded-full bg-slate-100"><div className="h-full rounded-full bg-accent/70" style={{ width: (value.average / 2 * 100) + '%' }}/></div></button>}</td>)}</tr>)}</tbody>
+        </table>
+      </div>
+      <p className="mt-3 text-[10px] leading-5 text-muted">每条 Trace 使用最新评测及其对应的人工复核，一次计分。上文作为证据，不独立计分；Act 缺失时读取 Tool 执行评分，不重复叠加。</p>
+    </Section>
+  </div>
 }

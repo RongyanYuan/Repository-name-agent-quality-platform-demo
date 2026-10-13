@@ -1,0 +1,303 @@
+$ vitest run
+
+ RUN  v2.1.9 /Users/yuanrongyan/Documents/ChatGPT/Agent管理前端页面
+
+ ✓ src/evolution/store.test.ts (25 tests) 4245ms
+   ✓ evolution reducer > materializes a batch-scoped Trace Evaluation Package and routing graph when a job completes 316ms
+   ✓ evolution reducer > keeps failed job history while retrying and materializes only the retry result 388ms
+ ✓ src/evolution/data/moduleEvolution.test.ts (31 tests) 3307ms
+   ✓ exact module-attribution evolution provenance > rejects cross-Trace, cross-package, cross-module and wrong attribution bindings 326ms
+   ✓ exact module-attribution evolution provenance > requires real same Trace, Case, package and module score provenance for old package history 328ms
+stderr | src/evolution/pages/evolutionPages.test.tsx > Office Agent 自进化治理页面 > 按对象单位展示进化漏斗，并可点击查看明细
+⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+ ✓ src/evolution/pages/evolutionPages.test.tsx (76 tests) 36341ms
+   ✓ Office Agent 自进化治理页面 > 按对象单位展示进化漏斗，并可点击查看明细 350ms
+   ✓ Office Agent 自进化治理页面 > 将过程评测与产物评测分开浏览，详情保留判据和人工历史 649ms
+   ✓ Office Agent 自进化治理页面 > opens Evidence and Observation IDs from evaluation detail as real references 2676ms
+   ✓ Office Agent 自进化治理页面 > opens Outcome Eval Evidence and its Artifact while Process Eval exposes Log navigation 3592ms
+   ✓ Office Agent 自进化治理页面 > 发布、资产、数据集和规则页面保留反查与待建设状态 1168ms
+   ✓ Office Agent 自进化治理页面 > filters existing version attributions by module and opens their complete history 394ms
+   ✓ Office Agent 自进化治理页面 > keeps two collection views connected and preserves explicitly selected historical objects 696ms
+   ✓ Office Agent 自进化治理页面 > creates an editable Dataset, changes members, freezes it, and versions frozen data before editing 2056ms
+   ✓ Office Agent 自进化治理页面 > creates a variant from an issue cluster and records a gate decision 341ms
+   ✓ Office Agent 自进化治理页面 > records a new gate decision without conflating it with release state 834ms
+   ✓ Office Agent 自进化治理页面 > appends and persists an evaluation revision after closing and reopening 10999ms
+   ✓ Office Agent 自进化治理页面 > creates and runs a single-variant experiment with a frozen three-repeat snapshot 3806ms
+   ✓ Office Agent 自进化治理页面 > guards asset publication, then persists the approved public workflow 712ms
+   ✓ Office Agent 自进化治理页面 > configures a pending rule and persists it after close and reopen 348ms
+   ✓ Office Agent 自进化治理页面 > creates a release and persists rollback status with version and reason 693ms
+   ✓ Office Agent 自进化治理页面 > makes the Variants top action create a persisted variant 431ms
+   ✓ Office Agent 自进化治理页面 > supports private asset upload and planned personal Skill entry 498ms
+   ✓ Office Agent 自进化治理页面 > creates an issue with full attribution, routing, optimization and responsibility fields 1166ms
+   ✓ Office Agent 自进化治理页面 > selects and edits an explicit attribution without overwriting its history 569ms
+ ✓ src/evolution/repository.test.ts (20 tests) 26330ms
+   ✓ local evolution repository > adds explicit module evolution bindings to an older seed without losing manual scores or frozen reports 1428ms
+   ✓ local evolution repository > reloads additive outcome reviews through a seed upgrade without changing the automatic record or frozen reports 1649ms
+   ✓ local evolution repository > round-trips a snapshot and isolates callers from stored object mutation 498ms
+   ✓ local evolution repository > saves and reloads a created completed multi-dataset experiment within the browser storage quota without losing evidence 6983ms
+   ✓ local evolution repository > retains a frozen historical report run instead of replacing it with the current run on reload 566ms
+   ✓ local evolution repository > continues to load an uncompressed same-schema JSON envelope 574ms
+   ✓ local evolution repository > migrates a complete V1 snapshot additively without replacing edited Cases 723ms
+   ✓ local evolution repository > preserves an invalid same-schema graph without writing replacement seed data 637ms
+   ✓ local evolution repository > supports reset and a service abstraction over persistence 997ms
+   ✓ local evolution repository > loads historical Experiment snapshots after the current Dataset advances 583ms
+   ✓ local evolution repository > upgrades an existing Mock snapshot with new evaluation fixtures without deleting human edits 1067ms
+   ✓ local evolution repository > upgrades a partially seeded 2.2 snapshot with the complete Skill catalog and history 973ms
+   ✓ local evolution repository > migrates Trace provenance and rating metadata into an older local snapshot 966ms
+   ✓ local evolution repository > loads raw legacy seed IDs twice without duplicating entities or losing human records and frozen snapshots 2192ms
+   ✓ local evolution repository > preserves raw storage on an alias conflict and makes the original data available for export 479ms
+   ✓ local evolution repository > keeps an already assigned numeric seed identity during later fixture upgrades 1297ms
+   ✓ local evolution repository > migrates raw old-schema named IDs before constructing the compatibility evaluation ledger 1449ms
+   ✓ local evolution repository > adds new governance fixtures atomically to an older seed while leaving its frozen reports intact 1840ms
+   ✓ local evolution repository > backfills recorded legacy module reviews once after identity migration without changing automatic evidence 1422ms
+ ✓ src/evolution/data.test.ts (27 tests) 2232ms
+stderr | src/App.integration.test.tsx > Office Agent self-evolution app integration > opens the non-primary Trace owning an Observation-only bookmark
+⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+ ✓ src/App.integration.test.tsx (46 tests) 27713ms
+   ✓ Office Agent self-evolution app integration > opens the non-primary Trace owning an Observation-only bookmark 570ms
+   ✓ Office Agent self-evolution app integration > routes a linked object ID to its owning page while preserving filters 401ms
+   ✓ Office Agent self-evolution app integration > maps legacy Benchmark comparison links to the experiment context 1002ms
+   ✓ Office Agent self-evolution app integration > clears an old object ID when switching primary navigation and keeps global filters 810ms
+   ✓ Office Agent self-evolution app integration > applies global version, business and environment filters to evolution Case data 445ms
+   ✓ Office Agent self-evolution app integration > opens owning-page details from every object ID query parameter 854ms
+   ✓ Office Agent self-evolution app integration > opens the case owning context from a stable typed deep link 518ms
+   ✓ Office Agent self-evolution app integration > opens the session owning context from a stable typed deep link 306ms
+   ✓ Office Agent self-evolution app integration > opens the trace owning context from a stable typed deep link 677ms
+   ✓ Office Agent self-evolution app integration > opens the observation owning context from a stable typed deep link 1209ms
+   ✓ Office Agent self-evolution app integration > opens the log owning context from a stable typed deep link 605ms
+   ✓ Office Agent self-evolution app integration > opens the evidence owning context from a stable typed deep link 618ms
+   ✓ Office Agent self-evolution app integration > opens the artifact owning context from a stable typed deep link 429ms
+   ✓ Office Agent self-evolution app integration > opens the process-eval owning context from a stable typed deep link 589ms
+   ✓ Office Agent self-evolution app integration > opens the outcome-eval owning context from a stable typed deep link 452ms
+   ✓ Office Agent self-evolution app integration > opens the attribution owning context from a stable typed deep link 457ms
+   ✓ Office Agent self-evolution app integration > opens the issue owning context from a stable typed deep link 607ms
+   ✓ Office Agent self-evolution app integration > opens the cluster owning context from a stable typed deep link 539ms
+   ✓ Office Agent self-evolution app integration > opens the variant owning context from a stable typed deep link 882ms
+   ✓ Office Agent self-evolution app integration > opens the experiment owning context from a stable typed deep link 339ms
+   ✓ Office Agent self-evolution app integration > opens the experiment-run owning context from a stable typed deep link 399ms
+   ✓ Office Agent self-evolution app integration > opens the window owning context from a stable typed deep link 364ms
+   ✓ Office Agent self-evolution app integration > opens the decision owning context from a stable typed deep link 440ms
+   ✓ Office Agent self-evolution app integration > opens the release owning context from a stable typed deep link 383ms
+   ✓ Office Agent self-evolution app integration > routes a Log typed ID to its exact owning Case and Log drawer 737ms
+   ✓ Office Agent self-evolution app integration > persists Case human confirmation through the evolution store 1605ms
+   ✓ Office Agent self-evolution app integration > rehydrates persisted Case confirmation after the provider is fully unmounted 2241ms
+   ✓ Office Agent self-evolution app integration > keeps legacy evaluation and issue references visible after redirect 1096ms
+   ✓ Office Agent self-evolution app integration > selects the exact non-primary Trace and Observation requested by URL 433ms
+   ✓ Office Agent self-evolution app integration > switches a multi-Trace Case in detail while retaining Case and global scope 645ms
+   ✓ Office Agent self-evolution app integration > revises only the explicitly selected attribution and preserves both histories 1431ms
+   ✓ Office Agent self-evolution app integration > renders the real four-turn Session data with exact Trace links 557ms
+   ✓ Office Agent self-evolution app integration > syncs all Case local filters to URL and exposes a visible Skill filter 470ms
+   ✓ Office Agent self-evolution app integration > uses the single global search field to filter Case / Trace records 355ms
+   ✓ Office Agent self-evolution app integration > retains repeated routing tags and local filters through navigation and remount 847ms
+   ✓ Office Agent self-evolution app integration > does not hydrate Case-local URL fields into the global Quality filter store 492ms
+   ✓ Office Agent self-evolution app integration > restores global, Case-local, repeated, and detail URL layers through sequential changes, breadcrumb, and Back 1199ms
+ ✓ src/evolution/cases/caseAnalysis.test.tsx (19 tests) 5085ms
+   ✓ CaseAnalysisWorkbench > opens process evaluation first and separates the process matrix from artifact scores 429ms
+   ✓ CaseAnalysisWorkbench > keeps Session, Trace, Evidence, artifact evaluations and governance links connected 733ms
+   ✓ CaseAnalysisWorkbench > selects an exact Trace in a multi-Trace Case and targets an exact attribution revision 1060ms
+   ✓ CaseAnalysisWorkbench > shows batch taste preference evidence and its self-evolution path in Case details 364ms
+   ✓ CaseAnalysisWorkbench > switches the active Trace and follows its own module evaluation package 432ms
+ ✓ src/evolution/components/ModuleEvolutionDetail.test.tsx (8 tests) 277ms
+ ✓ src/evolution/data/skillWorkspace.test.ts (15 tests) 1331ms
+ ✓ src/evolution/data/traceDataset.test.ts (17 tests) 2404ms
+   ✓ Trace and dataset contracts > deduplicates Case membership, prevents dataset re-adds and allows only evaluated online Golden cases 449ms
+stderr | src/evolution/pages/skillDatasetWorkspace.test.tsx > Skill version attribution dataset journey > defaults the selected Skill to its latest fixed version and shows only active version attributions
+⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+ ✓ src/evolution/pages/skillDatasetWorkspace.test.tsx (16 tests) 5469ms
+   ✓ Skill version attribution dataset journey > defaults the selected Skill to its latest fixed version and shows only active version attributions 362ms
+   ✓ Skill version attribution dataset journey > opens only dataset member Trace rows and returns from Case analysis with the selection retained 583ms
+   ✓ Skill version attribution dataset journey > opens an explicitly linked dataset Case even when the retained online scope excludes it 484ms
+   ✓ Skill version attribution dataset journey > opens a historical fixed-version deep link without silently showing the latest version context 465ms
+   ✓ Skill version attribution dataset journey > resolves a Window reference into the full fixed-version history report 300ms
+   ✓ Skill version attribution dataset journey > places the only concrete Skill selector beside its enabled version cascade for the reported URL 333ms
+   ✓ Skill version attribution dataset journey > clears a concrete Skill without restoring it from aliases or linked history: /datasets-evaluations?skill=skill-ppt-builder&historyItem=skill-ppt-builder%402.5.0%23skill-sop&view=history 462ms
+   ✓ Skill version attribution dataset journey > opens a historical row from the all-Skill history without clearing its ID or resetting to latest 581ms
+   ✓ Skill version attribution dataset journey > keeps the all-version Skill scope usable when moving to Case analysis 434ms
+ ✓ src/evolution/data/skillWorkspaceFixtures.test.ts (9 tests) 2988ms
+   ✓ fixed-version Skill workspace Mock fixtures > adds only missing whitelisted historical source versions while preserving human labels and frozen reports 972ms
+   ✓ fixed-version Skill workspace Mock fixtures > incrementally migrates catalogs and new objects without replacing human changes or snapshots 567ms
+   ✓ fixed-version Skill workspace Mock fixtures > does not duplicate fixtures or overwrite a manually edited version on repeated migration 777ms
+stderr | src/evolution/pages/evolutionTargetWorkbench.test.tsx > exact target Dataset / Evaluation workbench > opens Memory at its own version, clears stale Skill fields and keeps only the current cycle assets
+⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+ ✓ src/evolution/pages/evolutionTargetWorkbench.test.tsx (8 tests) 1614ms
+   ✓ exact target Dataset / Evaluation workbench > reads this cycle frozen report separately from mutable experiment metrics and actual release state 350ms
+   ✓ exact target Dataset / Evaluation workbench > opens the selected cycle of a reused dataset and keeps its pending state independent of the passed cycle 354ms
+ ✓ src/evolution/data/traceGovernance.test.ts (9 tests) 956ms
+ ✓ src/evolution/experimentLifecycle.test.ts (11 tests) 1762ms
+ ✓ src/evolution/reviews.test.ts (20 tests) 6190ms
+   ✓ Trace module human review revisions > appends two reviews, projects the latest, and preserves automatic records, routing and frozen reports 830ms
+   ✓ Trace module human review revisions > accepts the valid 0–2 human score 0 344ms
+   ✓ Trace module human review revisions > accepts the valid 0–2 human score 2 444ms
+   ✓ Trace module human review revisions > accepts the valid 0–2 human score 1.23 357ms
+   ✓ Trace module human review revisions > rejects invalid scored review undefined without changing state 308ms
+   ✓ Trace module human review revisions > requires a reason and permits an empty score only for UNKNOWN / N/A 746ms
+   ✓ Trace module human review revisions > rejects wrong Trace, automatic revision, Context scoring and unsupported derived links 337ms
+   ✓ Trace module human review revisions > rejects invalid legacy override writes without publishing fields, review or governance success 1243ms
+stderr | src/evolution/pages/governanceMutations.test.tsx > Issue, Variant and Skill/Asset governance mutations > persists a full Issue edit and phase-two processing chain across provider remounts
+⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+ ✓ src/evolution/pages/governanceMutations.test.tsx (6 tests) 16798ms
+   ✓ Issue, Variant and Skill/Asset governance mutations > persists a full Issue edit and phase-two processing chain across provider remounts 2662ms
+   ✓ Issue, Variant and Skill/Asset governance mutations > creates two independent issues for one Case with full fields and separate processing chains 9508ms
+   ✓ Issue, Variant and Skill/Asset governance mutations > shows 37/100 for taste only and keeps the unrelated cluster threshold pending 726ms
+   ✓ Issue, Variant and Skill/Asset governance mutations > creates a fully specified Variant from an eligible cluster with copied provenance 2480ms
+   ✓ Issue, Variant and Skill/Asset governance mutations > creates a direct-fix Variant from one Issue without inventing cluster provenance 853ms
+   ✓ Issue, Variant and Skill/Asset governance mutations > makes Skill evolution and Asset relationships operable in both directions 568ms
+ ✓ src/eval-v2.test.ts (11 tests) 104ms
+ ✓ src/evolution/identity.test.ts (9 tests) 2326ms
+   ✓ typed Session / Trace identity > rewrites typed live references while keeping snapshots and free evidence byte-equivalent 895ms
+ ✓ src/evolution/components/TraceGovernanceTimeline.test.tsx (7 tests) 553ms
+ ✓ src/evolution/data/mockDistribution.test.ts (10 tests) 1952ms
+   ✓ structured Mock evaluation distribution > covers representative PRD attribution wording and links the red-preference cohort to Agent iteration 367ms
+   ✓ structured Mock evaluation distribution > provides auditable evaluated examples for every PRD attribution and an eligible taste candidate 390ms
+ ✓ src/evolution/experimentSnapshotsV2.test.ts (5 tests) 825ms
+ ✓ src/evolution/components/attributionHistoryDrawer.test.tsx (4 tests) 1153ms
+   ✓ immutable attribution history audit trail > shows each real Case confirmation and module override audit while keeping earlier evidence and experiment snapshots 397ms
+   ✓ immutable attribution history audit trail > marks missing frozen configuration as unrecorded instead of borrowing current conditions 363ms
+ ✓ src/evolution/data/governanceGraph.test.ts (7 tests) 16ms
+ ✓ src/evolution/data/moduleEvolutionFixtures.test.ts (5 tests) 2019ms
+   ✓ explicit module evolution fixtures > adds distinct bindings and records without rewriting earlier score or frozen history 398ms
+   ✓ explicit module evolution fixtures > repairs the exact interim preview taste relation without resetting manual scores or frozen reports 1194ms
+ ✓ src/evolution/cases/CaseOutcomeEvaluations.test.tsx (4 tests) 1033ms
+   ✓ Artifact outcome tab > saves two reviews, reloads history and never publishes a failed durable save 506ms
+stderr | src/evolution/pages/experimentReleaseLifecycle.test.tsx > experiment configuration, execution, reports, and release details > shows monitoring baseline rules as pending instead of invented values
+⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+ ✓ src/evolution/pages/experimentReleaseLifecycle.test.tsx (7 tests) 2532ms
+   ✓ experiment configuration, execution, reports, and release details > uses a newly configured repeat rule as the next Experiment default 492ms
+   ✓ experiment configuration, execution, reports, and release details > creates a single experiment from every explicit selectable input and freezes the rule-derived default 575ms
+   ✓ experiment configuration, execution, reports, and release details > exposes QUEUED, RUNNING, and COMPLETED transitions instead of immediate completion 641ms
+stderr | src/evolution/cases/caseThreeTabs.test.tsx > Case has three distinct views with module-owned evolution history > defaults to process evaluation and normalizes old Trace/governance views without a governance tab
+⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+ ✓ src/evolution/cases/caseThreeTabs.test.tsx (5 tests) 3333ms
+   ✓ Case has three distinct views with module-owned evolution history > defaults to process evaluation and normalizes old Trace/governance views without a governance tab 576ms
+   ✓ Case has three distinct views with module-owned evolution history > resolves an old governance record link to the exact current module and evolution direction 939ms
+   ✓ Case has three distinct views with module-owned evolution history > shows an unmatched old governance source without choosing another module 492ms
+   ✓ Case has three distinct views with module-owned evolution history > opens independent exact module review history and keeps every automatic snapshot and Evidence 610ms
+   ✓ Case has three distinct views with module-owned evolution history > preserves Case shared audit under Session instead of repeating it in module evaluation 715ms
+ ✓ src/evolution/components/processEvaluationOwnership.test.tsx (4 tests) 1440ms
+   ✓ process evaluation belongs to one module presentation > opens an exact linked process evaluation with its reason and Evidence, and never substitutes a sibling Trace record 518ms
+   ✓ process evaluation belongs to one module presentation > keeps Outcome out of the process view and reveals scored dimensions and independent reasons in the matching module 308ms
+   ✓ process evaluation belongs to one module presentation > preserves explicit 0–2 automatic scores and leaves final aggregation unchanged 321ms
+ ✓ src/evolution/cases/fourTabReading.test.tsx (4 tests) 3006ms
+   ✓ three-tab Trace reading with module-owned evolution > opens process evaluation first with three tabs and one latest status column 989ms
+   ✓ three-tab Trace reading with module-owned evolution > keeps process scoring and Artifact scoring in separate owning tabs 438ms
+   ✓ three-tab Trace reading with module-owned evolution > restores routed evaluation and its module after Session without retaining a local tab override 681ms
+   ✓ three-tab Trace reading with module-owned evolution > keeps Case and the merged module direction objects clickable after removing the governance tab 896ms
+ ✓ src/evolution/components/moduleEvolution.integration.test.tsx (3 tests) 1759ms
+   ✓ Trace module attribution to exact evolution workbench > opens independent Skill deliveries and preserves the original module, Trace and filters on return 600ms
+   ✓ Trace module attribution to exact evolution workbench > restores an exact process fine item and refuses to replace a missing fine item with its module score 615ms
+   ✓ Trace module attribution to exact evolution workbench > lets route state own the open module layer and clears it when the route closes 543ms
+ ✓ src/evolution/services.test.ts (7 tests) 5ms
+ ✓ src/evolution/data/tasteLibraryTrigger.test.ts (5 tests) 412ms
+ ✓ src/evolution/data/traceGovernanceFixtures.test.ts (3 tests) 493ms
+   ✓ Trace governance Mock fixtures > adds one coherent new PPT full chain and preserves every prior frozen report and experiment 309ms
+ ✓ src/domain.test.ts (8 tests) 27ms
+stderr | src/traceGovernance.v2.test.tsx > v2 judge provenance in Task detail > shows LLM Judge reason, root evidence and the matched rubric rule
+⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+ ✓ src/traceGovernance.v2.test.tsx (6 tests) 1039ms
+   ✓ v2 judge provenance in Task detail > opens the full session conversation and links each query to its trace 578ms
+stderr | src/evolution/pages/evaluationCenterV2.test.tsx > V2 评测中心批次与 Trace 台账 > opens a real Trace package, read-only Evidence and its explicit shared review editor
+⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+ ✓ src/evolution/pages/evaluationCenterV2.test.tsx (3 tests) 21654ms
+   ✓ V2 评测中心批次与 Trace 台账 > opens a real Trace package, read-only Evidence and its explicit shared review editor 1542ms
+   ✓ V2 评测中心批次与 Trace 台账 > creates a batch with trace IDs and keeps the batch drawer deep-linkable 18671ms
+   ✓ V2 评测中心批次与 Trace 台账 > retains the legacy package review inputs when actual persistence fails 1440ms
+ ✓ src/evolution/data/v2Selectors.test.ts (6 tests) 479ms
+stderr | src/layout.test.tsx > global filter synchronization > keeps sequential time, version, business and environment changes in Store and URL
+⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+ ✓ src/layout.test.tsx (9 tests) 461ms
+   ✓ global filter synchronization > keeps sequential time, version, business and environment changes in Store and URL 452ms
+ ✓ src/evolution/components/moduleReview.integration.test.tsx (5 tests) 927ms
+   ✓ current Trace module review UI > opens the current module review explicitly and targets its independent history drawer callback 562ms
+   ✓ current Trace module review UI > shows an independent evaluation automatic reason and human reason in separate fields 337ms
+ ✓ src/evolution/data/variantWorkbench.test.ts (7 tests) 463ms
+stderr | src/evolution/components/moduleEvolutionDirectionRoute.integration.test.tsx > URL-owned module evolution direction history > keeps direction outside global filters and restores URL selection on refresh, Back and Forward
+⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+ ✓ src/evolution/components/moduleEvolutionDirectionRoute.integration.test.tsx (2 tests) 3646ms
+   ✓ URL-owned module evolution direction history > keeps direction outside global filters and restores URL selection on refresh, Back and Forward 2380ms
+   ✓ URL-owned module evolution direction history > carries the chosen direction through the exact dataset return link and clears it on module close or tab switch 1265ms
+ ✓ src/evolution/data/evolutionWorkbench.test.ts (4 tests) 477ms
+stderr | src/evolution/cases/traceCaseReview.integration.test.tsx > current Case module review through the application > persists two reviews across remount without changing automatic results, sibling Trace or frozen reports
+⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+ ✓ src/evolution/cases/traceCaseReview.integration.test.tsx (1 test) 3334ms
+   ✓ current Case module review through the application > persists two reviews across remount without changing automatic results, sibling Trace or frozen reports 3332ms
+ ✓ src/evolution/components/moduleEvolutionMatrix.test.tsx (3 tests) 113ms
+ ✓ src/evolution/outcomeReviews.test.ts (14 tests) 2087ms
+   ✓ Outcome dimension review revisions > appends two reviews without changing automatic, final scores, other artifacts or frozen reports 734ms
+stderr | src/homeDashboard.test.tsx > quality overview v2 dashboard > renders the four independent sections in the requested order
+⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+ ✓ src/homeDashboard.test.tsx (6 tests) 556ms
+ ✓ src/evolution/data/artifactOutcomes.test.ts (4 tests) 316ms
+stderr | src/evolution/pages/variantWorkbench.test.tsx > unified Variant governance workspace > collapses category Sections and leaves the heading and count visible
+⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+ ✓ src/evolution/pages/variantWorkbench.test.tsx (4 tests) 832ms
+   ✓ unified Variant governance workspace > collapses category Sections and leaves the heading and count visible 430ms
+ ✓ src/evolution/components/ModuleReviewEditor.test.tsx (2 tests) 103ms
+stderr | src/evolution/pages/governanceOverviewQuality.test.tsx > 治理总览四层质量指标 > 独立展示北极星、合格产物、过程效率和模块诊断四个 section
+⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+ ✓ src/evolution/pages/governanceOverviewQuality.test.tsx (3 tests) 951ms
+   ✓ 治理总览四层质量指标 > 独立展示北极星、合格产物、过程效率和模块诊断四个 section 320ms
+   ✓ 治理总览四层质量指标 > 没有用户接受和过程业务阈值时不推论满意率或低效率 302ms
+   ✓ 治理总览四层质量指标 > 每层子指标都可以收起并保留总指标 328ms
+ ✓ src/evolution/cases/traceDetailProjection.test.ts (2 tests) 378ms
+ ✓ src/ui.test.tsx (5 tests) 100ms
+ ✓ src/evolution/data/artifactOutcomeFixtures.test.ts (2 tests) 519ms
+   ✓ Artifact outcome dimension Mock enrichment > is idempotent and preserves existing automatic ledgers and all frozen snapshots 361ms
+ ✓ src/evolution/moduleReviewPersistence.test.tsx (1 test) 237ms
+stderr | src/anomalyMonitoring.test.tsx > anomaly monitoring page > renders the four monitoring sections and explicit unknown baseline copy
+⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+ ✓ src/anomalyMonitoring.test.tsx (2 tests) 221ms
+ ✓ src/evolution/cases/caseDetailDedup.test.tsx (1 test) 488ms
+   ✓ Case tabs own their complete content once > owns complete scores in their tabs without restoring the deleted execution or task tabs 487ms
+ ✓ src/store.test.ts (3 tests) 2ms
+ ✓ src/evolution/data/governanceGraphFixtures.test.ts (1 test) 286ms
+ ✓ src/evolution/components/StatusIndicator.test.tsx (10 tests) 55ms
+ ✓ src/evolution/components/identityDisplay.test.tsx (2 tests) 57ms
+ ✓ src/eval-v3.test.ts (2 tests) 5ms
+ ✓ src/evolution/data/moduleEvolutionValidation.test.ts (2 tests) 573ms
+   ✓ module evolution binding validation > rejects a module target carrying Skill identity or a Skill target without its fixed version 360ms
+ ✓ src/evolution/governanceTaxonomy.test.ts (3 tests) 2ms
+ ✓ src/evolution/components/EvolutionLoadBoundary.test.tsx (1 test) 53ms
+ ✓ src/evolution/cases/outcomeEvidenceContext.test.tsx (1 test) 404ms
+   ✓ Outcome Evidence context > keeps the exact Artifact dimension score, Rubric and observation Log when opening its root Evidence 403ms
+ ✓ src/evolution/data/governanceParentValidation.test.ts (1 test) 554ms
+   ✓ governance parent relationships > rejects missing, cross-Trace and cyclic parents without changing the source 553ms
+ ✓ src/evolution/labels.test.ts (2 tests) 72ms
+ ✓ src/evolution/score.test.ts (2 tests) 1ms
+
+ Test Files  69 passed (69)
+      Tests  593 passed (593)
+   Start at  00:34:56
+   Duration  285.99s (transform 2.89s, setup 5.76s, collect 35.45s, tests 209.47s, environment 19.43s, prepare 3.56s)
+

@@ -11,17 +11,23 @@ test('核心导航收敛为四个入口，Case 可进入完整 Trace', async ({ 
   await page.getByRole('button', { name: /查看完整 Case/ }).first().click()
   const detail = page.getByRole('dialog', { name: /Case 详情/ })
   await expect(detail).toBeVisible()
-  await detail.getByRole('button', { name: '查看 Trace 执行' }).click()
+  await expect(detail.getByRole('tab', { name: '评测中心' })).toHaveAttribute('aria-selected', 'true')
+  await expect(detail.getByRole('tab')).toHaveCount(3)
+  await expect(detail.getByRole('tab', { name: '治理链路' })).toHaveCount(0)
   await expect(detail.getByRole('heading', { name: 'Trace 模块评测矩阵' })).toBeVisible()
-  await expect(detail.getByRole('heading', { name: '产物 / 结果评测' })).toBeVisible()
+  await expect(detail.getByRole('heading', { name: '产物 / 结果评测' })).toHaveCount(0)
+  await detail.getByRole('tab', { name: '产物评测' }).click()
+  await expect(detail.getByRole('tab', { name: '产物评测' })).toHaveAttribute('aria-selected', 'true')
 })
 
-test('Case 治理链路中的问题、变体和实验 ID 进入统一历史视图', async ({ page }) => {
-  await page.goto('/cases?timeRange=30d&environment=Production&caseId=case-ppt-management')
-  await page.getByRole('tab', { name: '治理链路' }).click()
-  await page.getByRole('button', { name: 'variant-ppt-routing-v3' }).click()
-  await expect(page).toHaveURL(/\/datasets-evaluations\?.*variantId=variant-ppt-routing-v3.*view=history/)
-  await expect(page.locator('main').getByRole('heading', { name: '归因与进化历史', exact: true })).toBeVisible()
+test('模块进化历史中的变体与实验进入精确历史视图', async ({ page }) => {
+  await page.goto('/cases?timeRange=30d&environment=Production&traceId=trace-ppt-generate&caseId=case-ppt-management')
+  await page.getByRole('button', { name: '查看 skill 进化历史', exact: true }).click()
+  const module=page.getByRole('dialog',{name:'skill · 进化详情',exact:true})
+  await module.getByRole('button',{name:'skill sop错误',exact:true}).click()
+  await module.locator('[data-evolution-record-id="evolution-module-path-demo-sop-agent"]').getByRole('button',{name:'variant-module-path-demo-sop',exact:true}).first().click()
+  await expect(page).toHaveURL(url=>url.pathname==='/datasets-evaluations' && url.searchParams.get('variantId')==='variant-module-path-demo-sop' && url.searchParams.get('evolutionRecordId')==='evolution-module-path-demo-sop-agent')
+  await expect(page.getByRole('dialog',{name:/归因历史详情/})).toContainText('experiment-module-path-demo-single')
 
   await page.goto('/datasets-evaluations?view=history&timeRange=30d&environment=Production&experimentId=exp-single-ppt-routing')
   await expect(page.getByRole('dialog', { name: /归因历史详情/ })).toContainText('exp-single-ppt-routing')
@@ -44,10 +50,10 @@ test('所有旧治理 URL 都重定向到统一工作台并保留筛选与对象
 
 test('Case confirmation and attribution revision persist after reload', async ({ page }) => {
   await page.goto('/cases?caseId=case-multi-route&timeRange=30d')
-  await page.getByRole('button', { name: '人工确认' }).click()
+  await page.getByRole('button', { name: '人工确认', exact: true }).click()
   await page.getByLabel('确认说明').fill('E2E 人工确认持久化')
   await page.getByRole('button', { name: '保存人工结论' }).click()
-  await page.getByRole('button', { name: '调整归因' }).click()
+  await page.getByRole('button', { name: '调整归因', exact: true }).click()
   await page.getByLabel('目标归因').selectOption('attribution-reason-tool')
   await page.getByLabel('归因模块').selectOption('Reason')
   await page.getByLabel('归因维度').selectOption('调用工具所需参数是否正确')
@@ -55,8 +61,10 @@ test('Case confirmation and attribution revision persist after reload', async ({
   await attributionDialog.locator('textarea').fill('E2E 指定归因持久化')
   await page.getByRole('button', { name: '保存归因调整' }).click()
   await page.reload()
-  await expect(page.getByText('E2E 人工确认持久化')).toBeVisible()
-  await expect(page.getByText('E2E 指定归因持久化')).toBeVisible()
+  await page.getByRole('tab', { name: 'Session 对话' }).click()
+  await page.locator('summary').filter({ hasText: 'Case 共享处理审计' }).click()
+  await expect(page.getByText('E2E 人工确认持久化').first()).toBeVisible()
+  await expect(page.getByText('E2E 指定归因持久化').first()).toBeVisible()
 })
 
 test('规则配置仍保留为独立入口', async ({ page }) => {

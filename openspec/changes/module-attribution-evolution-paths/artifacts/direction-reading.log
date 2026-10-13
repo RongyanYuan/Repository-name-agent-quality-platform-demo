@@ -1,0 +1,12 @@
+$ playwright test e2e/module-direction-history.spec.ts --output=/tmp/module-direction-history-final-reading
+[WebServer] (node:10048) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 2 tests using 1 worker
+
+(node:10056) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › e2e/module-direction-history.spec.ts:5:1 › 点击模块直接查看不同方向及完整历史，方向刷新和返回可恢复 (6.2s)
+  ✓  2 [chromium] › e2e/module-direction-history.spec.ts:43:1 › 模块行点击不打开Evidence，明确Evidence按钮仍可独立使用 (2.5s)
+
+  2 passed (11.0s)

@@ -1,0 +1,23 @@
+$ vitest run src/evolution/components/moduleEvolution.integration.test.tsx src/evolution/pages/evolutionTargetWorkbench.test.tsx
+
+ RUN  v2.1.9 /Users/yuanrongyan/Documents/ChatGPT/Agent管理前端页面
+
+stderr | src/evolution/pages/evolutionTargetWorkbench.test.tsx > exact target Dataset / Evaluation workbench > opens Memory at its own version, clears stale Skill fields and keeps only the current cycle assets
+⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+ ✓ src/evolution/pages/evolutionTargetWorkbench.test.tsx (8 tests) 2459ms
+   ✓ exact target Dataset / Evaluation workbench > opens Memory at its own version, clears stale Skill fields and keeps only the current cycle assets 302ms
+   ✓ exact target Dataset / Evaluation workbench > reads this cycle frozen report separately from mutable experiment metrics and actual release state 535ms
+   ✓ exact target Dataset / Evaluation workbench > opens the selected cycle of a reused dataset and keeps its pending state independent of the passed cycle 564ms
+   ✓ exact target Dataset / Evaluation workbench > chooses the cycle that owns the clicked experiment when two reported cycles reuse the same dataset 358ms
+ ✓ src/evolution/components/moduleEvolution.integration.test.tsx (3 tests) 2258ms
+   ✓ Trace module attribution to exact evolution workbench > opens independent Skill deliveries and preserves the original module, Trace and filters on return 825ms
+   ✓ Trace module attribution to exact evolution workbench > restores an exact process fine item and refuses to replace a missing fine item with its module score 703ms
+   ✓ Trace module attribution to exact evolution workbench > lets route state own the open module layer and clears it when the route closes 728ms
+
+ Test Files  2 passed (2)
+      Tests  11 passed (11)
+   Start at  21:23:26
+   Duration  15.88s (transform 3.43s, setup 948ms, collect 5.51s, tests 4.72s, environment 2.64s, prepare 469ms)
+

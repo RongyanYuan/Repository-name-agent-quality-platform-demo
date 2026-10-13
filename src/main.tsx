@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import { EvolutionProvider } from './evolution/store'
+import { EvolutionLoadBoundary } from './evolution/components/EvolutionLoadBoundary'
 import { QualityProvider } from './store'
 import './styles.css'
 
@@ -14,9 +15,11 @@ createRoot(root).render(
   <StrictMode>
     <BrowserRouter>
       <QualityProvider>
-        <EvolutionProvider>
-          <App />
-        </EvolutionProvider>
+        <EvolutionLoadBoundary>
+          <EvolutionProvider>
+            <App />
+          </EvolutionProvider>
+        </EvolutionLoadBoundary>
       </QualityProvider>
     </BrowserRouter>
   </StrictMode>

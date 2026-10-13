@@ -1,11 +1,20 @@
-import { createContext, createElement, useContext, useEffect, useMemo, useReducer, type Dispatch, type PropsWithChildren } from 'react'
+import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useReducer, useRef, type Dispatch, type PropsWithChildren } from 'react'
 import { createInitialEvolutionData } from './data'
-import { TRACE_MODULE_LABELS, type AlgorithmBadcaseItem, type Asset, type Attribution, type AttributionRevision, type AuditEvent, type BadcaseQueue, type Case, type Dataset, type EvaluationBatch, type EvaluationEvidenceBundle, type EvaluationFinding, type EvaluationJob, type EvaluationRevision, type Evidence, type EvolutionState, type Experiment, type ExperimentConfigSnapshot, type ExperimentMetric, type ExperimentRun, type GateDecision, type Issue, type IssueCluster, type ModuleEvaluationScore, type ReleaseVersion, type RoutingDecision, type RoutingDelivery, type RuleConfig, type Skill, type TraceEvaluationModuleCode, type TraceEvaluationPackage, type Variant, type Window } from './domain'
+import { TRACE_MODULE_LABELS, type AlgorithmBadcaseItem, type Asset, type Attribution, type AttributionRevision, type AuditEvent, type BadcaseQueue, type Case, type Dataset, type DatasetMembershipRecord, type DatasetSamplingSnapshot, type EvaluationBatch, type EvaluationEvidenceBundle, type EvaluationFinding, type EvaluationJob, type EvaluationRevision, type Evidence, type EvolutionState, type Experiment, type ExperimentConfigSnapshot, type ExperimentMetric, type ExperimentRun, type GateDecision, type Issue, type IssueCluster, type ModuleEvaluationScore, type ReleaseVersion, type RoutingDecision, type RoutingDelivery, type RuleConfig, type Skill, type TraceEvaluationModuleCode, type TraceEvaluationPackage, type Variant, type Window } from './domain'
 import { createLocalEvolutionRepository, type EvolutionRepository } from './repository'
 import { selectTasteLibraryTrigger } from './data/selectors'
+import type { ModuleReviewInput } from './reviews'
+import { toModuleReviewRevision, automaticModuleRevisionId } from './reviews'
+import { appendGovernanceEvents } from './data/traceGovernance'
+import { resolveIdentity } from './identity'
+import { toOutcomeReviewRevision, validateOutcomeReviewInput, type OutcomeReviewInput } from './outcomeReviews'
+import { projectArtifactOutcomeEvaluation } from './data/artifactOutcomes'
+import { validateScopedRule } from './data/scopedRules'
+import { datasetExecutionMutation, type DatasetExecutionAction } from './datasetExecutionMutations'
 
 export interface EvolutionActionMeta { actor: string; reason: string; at?: string; auditId?: string }
 export type EvolutionAction =
+  | DatasetExecutionAction
   | { type: 'UPDATE_CASE'; caseId: string; patch: Partial<Case>; meta: EvolutionActionMeta }
   | { type: 'ADD_EVALUATION_REVISION'; evaluationType: 'PROCESS' | 'OUTCOME'; evaluationId: string; revision: EvaluationRevision; meta: EvolutionActionMeta }
   | { type: 'UPSERT_ATTRIBUTION'; attribution: Attribution; meta: EvolutionActionMeta }
@@ -23,12 +32,16 @@ export type EvolutionAction =
   | { type: 'CREATE_RELEASE'; release: ReleaseVersion; meta: EvolutionActionMeta }
   | { type: 'UPDATE_RELEASE'; releaseId: string; patch: Partial<Omit<ReleaseVersion, 'id' | 'createdAt'>>; meta: EvolutionActionMeta }
   | { type: 'UPDATE_RULE'; ruleId: string; patch: Partial<Omit<RuleConfig, 'id' | 'createdAt'>>; meta: EvolutionActionMeta }
+  | { type: 'UPSERT_SCOPED_RULE'; rule: RuleConfig; meta: EvolutionActionMeta }
   | { type: 'UPDATE_ASSET'; assetId: string; patch: Partial<Omit<Asset, 'id' | 'createdAt'>>; meta: EvolutionActionMeta }
   | { type: 'UPLOAD_ASSET'; asset: Asset; meta: EvolutionActionMeta }
   | { type: 'CREATE_PLANNED_PERSONAL_SKILL'; skill: Skill; meta: EvolutionActionMeta }
   | { type: 'CREATE_DATASET_VERSION'; dataset: Dataset; sourceDatasetId?: string; meta: EvolutionActionMeta }
+  | { type: 'CREATE_CUSTOM_DATASET'; dataset: Dataset; meta: EvolutionActionMeta }
   | { type: 'UPDATE_DATASET_VERSION'; datasetId: string; patch: Partial<Pick<Dataset, 'name' | 'scope' | 'source' | 'timeRange' | 'population'>>; meta: EvolutionActionMeta }
   | { type: 'SET_DATASET_MEMBERS'; datasetId: string; caseIds: string[]; meta: EvolutionActionMeta }
+  | { type: 'ADD_DATASET_TRACES'; datasetId: string; traceIds: string[]; meta: EvolutionActionMeta }
+  | { type: 'APPLY_DATASET_SAMPLING'; datasetId: string; snapshot: DatasetSamplingSnapshot; meta: EvolutionActionMeta }
   | { type: 'FREEZE_DATASET_VERSION'; datasetId: string; meta: EvolutionActionMeta }
   | { type: 'CREATE_EVALUATION_BATCH'; batch: EvaluationBatch; meta: EvolutionActionMeta }
   | { type: 'QUEUE_EVALUATION_JOB'; job: EvaluationJob; meta: EvolutionActionMeta }
@@ -37,6 +50,8 @@ export type EvolutionAction =
   | { type: 'FAIL_EVALUATION_JOB'; jobId: string; error: string; meta: EvolutionActionMeta }
   | { type: 'RETRY_EVALUATION_JOB'; jobId: string; meta: EvolutionActionMeta }
   | { type: 'UPDATE_MODULE_EVALUATION'; packageId: string; scoreId: string; patch: Partial<ModuleEvaluationScore>; meta: EvolutionActionMeta }
+  | { type: 'REVIEW_TRACE_MODULE'; input: ModuleReviewInput; meta: EvolutionActionMeta }
+  | { type: 'REVIEW_OUTCOME_DIMENSION'; input: OutcomeReviewInput; meta: EvolutionActionMeta }
   | { type: 'UPDATE_EVALUATION_FINDING'; findingId: string; patch: Partial<EvaluationFinding>; meta: EvolutionActionMeta }
   | { type: 'UPDATE_ROUTING_DECISION'; decisionId: string; patch: Partial<RoutingDecision>; meta: EvolutionActionMeta }
   | { type: 'UPDATE_ROUTING_DELIVERY'; deliveryId: string; patch: Partial<RoutingDelivery>; meta: EvolutionActionMeta }
@@ -44,6 +59,52 @@ export type EvolutionAction =
   | { type: 'RESET'; state: EvolutionState }
 
 const addUnique = (values: string[], value: string) => values.includes(value) ? values : [...values, value]
+const mergeDatasetTraces = (state: EvolutionState, datasetId: string, traceIds: string[], at: string, actor: string): Pick<EvolutionState, 'datasets' | 'datasetMemberships'> | undefined => {
+  const current = state.datasets.find(item => item.id === datasetId)
+  if (!current || current.frozen) return undefined
+  const validTraceIds = [...new Set(traceIds)].filter(traceId => state.traces.some(trace => trace.id === traceId))
+  if (validTraceIds.length !== new Set(traceIds).size) return undefined
+  const memberships = (state.datasetMemberships ?? []).map(item => ({ ...item, traceIds: [...item.traceIds] }))
+  const isMember = (traceId: string) => memberships.some(item => item.datasetId === datasetId && item.datasetVersion === current.version && item.traceIds.includes(traceId))
+  const additions = validTraceIds.filter(traceId => !isMember(traceId))
+  const grouped = new Map<string, string[]>()
+  additions.forEach(traceId => {
+    const trace = state.traces.find(item => item.id === traceId)
+    if (!trace) return
+    grouped.set(trace.caseId, [...(grouped.get(trace.caseId) ?? []), traceId])
+  })
+  grouped.forEach((ids, caseId) => {
+    const existing = memberships.find(item => item.datasetId === datasetId && item.datasetVersion === current.version && item.caseId === caseId && item.scope === 'TRACE')
+    if (existing) existing.traceIds = [...new Set([...existing.traceIds, ...ids])]
+    else memberships.push({ id: `membership-${datasetId}-${caseId}-${memberships.length + 1}`, datasetId, datasetVersion: current.version, caseId, traceIds: ids, scope: 'TRACE', joinedAt: at, actor, origin: 'LOCAL' })
+  })
+  const caseIds = [...new Set([...current.caseIds, ...[...grouped.keys()]])]
+  const datasetMemberships = memberships.filter(item => item.datasetId === datasetId && item.datasetVersion === current.version)
+  const rangeTraceIds = new Set<string>()
+  for (const caseId of caseIds) {
+    const caseMemberships = datasetMemberships.filter(item => item.caseId === caseId)
+    if (!caseMemberships.length) {
+      state.traces.filter(trace => trace.caseId === caseId).forEach(trace => rangeTraceIds.add(trace.id))
+      continue
+    }
+    for (const membership of caseMemberships) {
+      if (membership.scope === 'CASE_SHARED') state.traces.filter(trace => trace.caseId === caseId).forEach(trace => rangeTraceIds.add(trace.id))
+      else membership.traceIds.forEach(traceId => rangeTraceIds.add(traceId))
+    }
+  }
+  const rangeTraces = state.traces.filter(trace => rangeTraceIds.has(trace.id))
+  const rangeStarts = rangeTraces.map(trace => Date.parse(trace.queryAt ?? trace.startedAt)).filter(Number.isFinite)
+  const rangeEnds = rangeTraces.map(trace => Date.parse(trace.queryAt ?? trace.endedAt)).filter(Number.isFinite)
+  const timeRange = rangeStarts.length && rangeEnds.length
+    ? { from: new Date(Math.min(...rangeStarts)).toISOString(), to: new Date(Math.max(...rangeEnds)).toISOString() }
+    : current.timeRange
+  const externalSampleCount = current.population.externalSampleCount
+  const sampleCount = caseIds.length + externalSampleCount
+  return {
+    datasets: state.datasets.map(item => item.id === datasetId ? { ...item, caseIds, timeRange, sampleCount, population: { ...item.population, localCaseCount: caseIds.length, totalSampleCount: sampleCount }, updatedAt: at } : item),
+    datasetMemberships: memberships
+  }
+}
 const traceModuleCodes = Object.keys(TRACE_MODULE_LABELS) as TraceEvaluationModuleCode[]
 const batchPackageId = (batchId: string, traceId: string) => `package-${batchId}-${traceId}`
 const unknownEvidence = (): EvaluationEvidenceBundle => ({ rootEvidenceIds: [], rubricRule: '待评测：无可复用的同 Trace Rubric 结果', observationIds: [], logIds: [], artifactIds: [], firstFailure: false, derivedFailure: false, completeness: 'MISSING' })
@@ -92,17 +153,18 @@ const materializeTrace = (state: EvolutionState, batch: EvaluationBatch, job: Ev
   const template = state.tracePackages.find((item) => item.id === `package-${traceId}` && ['EVALUATED', 'PARTIAL'].includes(item.status))
     ?? state.tracePackages.find((item) => item.batchId !== batch.id && item.traceId === traceId && ['EVALUATED', 'PARTIAL'].includes(item.status))
   if (!template) {
-    return { packageRecord: { ...existing, status: 'PARTIAL', processCoverage: 'MISSING', outcomeCoverage: 'MISSING', moduleScores: existing.moduleScores.length ? existing.moduleScores : unknownModuleScores(packageId, traceId, existing.caseId, job, at), revaluationJobIds: addUnique(existing.revaluationJobIds, job.id), updatedAt: at }, findings: [], decisions: [], deliveries: [], badcases: [] }
+    const moduleScores = (existing.moduleScores.length ? existing.moduleScores : unknownModuleScores(packageId, traceId, existing.caseId, job, at)).map((score) => ({ ...score, automaticRevisionId: `automatic-${job.id}-${packageId}-${score.moduleCode}`, evalAgentVersion: job.evalAgentVersion, rubricVersion: job.rubricVersion, humanStatus: undefined, humanScore: undefined, humanNote: undefined, humanUpdatedAt: undefined, humanUpdatedBy: undefined, updatedAt: at }))
+    return { packageRecord: { ...existing, status: 'PARTIAL', processCoverage: 'MISSING', outcomeCoverage: 'MISSING', moduleScores, revaluationJobIds: addUnique(existing.revaluationJobIds, job.id), updatedAt: at }, findings: [], decisions: [], deliveries: [], badcases: [] }
   }
   const scores = template.moduleScores.map((score): ModuleEvaluationScore => {
-    const oldHuman = existing.moduleScores.find((item) => item.moduleCode === score.moduleCode)
     return {
       ...score, id: `module-score-${packageId}-${score.moduleCode.toLowerCase()}`, packageId,
+      automaticRevisionId: `automatic-${job.id}-${packageId}-${score.moduleCode}`,
       evidence: structuredClone(score.evidence),
       evalAgentVersion: job.evalAgentVersion, rubricVersion: job.rubricVersion,
       judgeReason: `${score.judgeReason}（本地 Mock 复用 ${template.id} 的同 Trace 结果；非实时 ${job.evalAgentVersion} 运行。）`,
-      humanStatus: oldHuman?.humanStatus, humanScore: oldHuman?.humanScore, humanNote: oldHuman?.humanNote,
-      humanUpdatedAt: oldHuman?.humanUpdatedAt, humanUpdatedBy: oldHuman?.humanUpdatedBy,
+      humanStatus: undefined, humanScore: undefined, humanNote: undefined,
+      humanUpdatedAt: undefined, humanUpdatedBy: undefined,
       createdAt: at, updatedAt: at
     }
   })
@@ -142,7 +204,7 @@ const eventFor = (action: Exclude<EvolutionAction, { type: 'RESET' }>, entityTyp
   const at = action.meta.at ?? new Date().toISOString()
   return { id: action.meta.auditId ?? `audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, at, actor: action.meta.actor, action: action.type, entityType, entityId, reason: action.meta.reason, changes }
 }
-const finalize = (state: EvolutionState, event: AuditEvent, patch: Partial<EvolutionState>): EvolutionState => ({ ...state, ...patch, updatedAt: event.at, auditTrail: [...state.auditTrail, event] })
+const finalize = (state: EvolutionState, event: AuditEvent, patch: Partial<EvolutionState>): EvolutionState => appendGovernanceEvents(state, { ...state, ...patch, updatedAt: event.at, auditTrail: [...state.auditTrail, event] }, event)
 const deterministicScore = (text: string) => {
   let hash = 2166136261
   for (const character of text) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619) >>> 0
@@ -224,6 +286,19 @@ const normalizeSuppliedRun = (state: EvolutionState, experiment: Experiment, run
 
 export function evolutionReducer(state: EvolutionState, action: EvolutionAction): EvolutionState {
   switch (action.type) {
+    case 'ADD_DATASET_QUERY':
+    case 'CREATE_DATASET_RUN':
+    case 'START_DATASET_RUN':
+    case 'SET_DATASET_RUN_ITEM_PHASE':
+    case 'APPLY_DATASET_RUN_ITEM_RESULT':
+    case 'COMPLETE_DATASET_RUN':
+    case 'FAIL_DATASET_RUN': {
+      const patch = datasetExecutionMutation(state, action)
+      if (!patch) return state
+      const entityId = action.type === 'ADD_DATASET_QUERY' ? action.query.id : action.type === 'CREATE_DATASET_RUN' ? action.run.id : action.runId
+      const event = eventFor(action, action.type === 'ADD_DATASET_QUERY' ? 'DatasetQuery' : 'DatasetExecutionRun', entityId)
+      return finalize(state, event, patch)
+    }
     case 'UPDATE_CASE': {
       const event = eventFor(action, 'Case', action.caseId, action.patch as Record<string, unknown>)
       return finalize(state, event, { cases: state.cases.map((item) => item.id === action.caseId ? { ...item, ...action.patch, updatedAt: event.at } : item) })
@@ -380,6 +455,14 @@ export function evolutionReducer(state: EvolutionState, action: EvolutionAction)
       const rules = state.rules.map((item) => item.id === action.ruleId ? { ...item, ...action.patch, updatedAt: event.at } : item)
       return finalize(state, event, { rules })
     }
+    case 'UPSERT_SCOPED_RULE': {
+      if (!action.rule.configuration || validateScopedRule(state, action.rule).length) return state
+      const existing = state.rules.find(item => item.id === action.rule.id)
+      const event = eventFor(action, 'RuleConfig', action.rule.id, { configuration: action.rule.configuration, status: action.rule.status })
+      const rule = { ...structuredClone(action.rule), createdAt: existing?.createdAt ?? event.at, updatedAt: event.at }
+      const rules = existing ? state.rules.map(item => item.id === rule.id ? rule : item) : [...state.rules, rule]
+      return finalize(state, event, { rules })
+    }
     case 'UPDATE_ASSET': {
       const existing = state.assets.find((item) => item.id === action.assetId)
       if (!existing) return state
@@ -416,6 +499,16 @@ export function evolutionReducer(state: EvolutionState, action: EvolutionAction)
       const dataset: Dataset = { ...action.dataset, frozen: false, caseIds, sampleCount, population: { ...action.dataset.population, localCaseCount: caseIds.length, externalSampleCount, totalSampleCount: sampleCount }, updatedAt: event.at }
       return finalize(state, event, { datasets: [...state.datasets, dataset] })
     }
+    case 'CREATE_CUSTOM_DATASET': {
+      const input = action.dataset
+      if (state.datasets.some(item => item.id === input.id) || input.caseIds.some(id => !state.cases.some(item => item.id === id))) return state
+      const caseIds = [...new Set(input.caseIds)]
+      const externalSampleCount = Math.max(0, input.population.externalSampleCount)
+      const sampleCount = caseIds.length + externalSampleCount
+      const event = eventFor(action, 'Dataset', input.id, { datasetOrigin: 'USER_CUSTOM', version: input.version })
+      const dataset: Dataset = { ...input, datasetOrigin: 'USER_CUSTOM', purpose: input.purpose ?? '自定义数据集', datasetCategory: input.datasetCategory ?? 'PERSONAL', ownerScope: input.ownerScope ?? 'USER', createdBy: input.createdBy ?? action.meta.actor, frozen: false, caseIds, sampleCount, population: { ...input.population, localCaseCount: caseIds.length, externalSampleCount, totalSampleCount: sampleCount }, updatedAt: event.at }
+      return finalize(state, event, { datasets: [...state.datasets, dataset] })
+    }
     case 'UPDATE_DATASET_VERSION': {
       const current = state.datasets.find((item) => item.id === action.datasetId)
       if (!current || current.frozen) return state
@@ -434,6 +527,29 @@ export function evolutionReducer(state: EvolutionState, action: EvolutionAction)
       const datasets = state.datasets.map((item) => item.id === action.datasetId ? { ...item, caseIds, sampleCount, population: { ...item.population, localCaseCount: caseIds.length, totalSampleCount: sampleCount }, updatedAt: event.at } : item)
       return finalize(state, event, { datasets })
     }
+    case 'ADD_DATASET_TRACES': {
+      const traceIds = [...new Set(action.traceIds.map(id => resolveIdentity(state, 'trace', id)))]
+      if (!traceIds.length) return state
+      const current = state.datasets.find(item => item.id === action.datasetId)
+      const existingMemberships = state.datasetMemberships ?? []
+      if (current && traceIds.length > 0 && traceIds.every(traceId => existingMemberships.some(item => item.datasetId === current.id && item.datasetVersion === current.version && item.traceIds.includes(traceId)))) return state
+      const merged = mergeDatasetTraces(state, action.datasetId, traceIds, action.meta.at ?? new Date().toISOString(), action.meta.actor)
+      if (!merged) return state
+      const event = eventFor(action, 'Dataset', action.datasetId, { traceIds })
+      return finalize(state, event, merged)
+    }
+    case 'APPLY_DATASET_SAMPLING': {
+      const snapshot = action.snapshot
+      if (snapshot.datasetId !== action.datasetId || !['PREVIEW', 'APPLIED'].includes(snapshot.status)) return state
+      if ((state.datasetSamplingSnapshots ?? []).some(item => item.id === snapshot.id)) return state
+      const traceIds = [...new Set(snapshot.allocations.flatMap(item => item.sampledTraceIds))].map(id => resolveIdentity(state, 'trace', id))
+      const merged = mergeDatasetTraces(state, action.datasetId, traceIds, action.meta.at ?? new Date().toISOString(), action.meta.actor)
+      if (!merged) return state
+      const event = eventFor(action, 'DatasetSamplingSnapshot', snapshot.id, { datasetId: action.datasetId, traceCount: traceIds.length, assetId: snapshot.assetId, assetVersion: snapshot.assetVersion })
+      const applied: DatasetSamplingSnapshot = { ...snapshot, status: 'APPLIED', appliedAt: event.at, updatedAt: event.at, candidateTraceIds: [...new Set(snapshot.candidateTraceIds.map(id => resolveIdentity(state, 'trace', id)))], allocations: snapshot.allocations.map(item => ({ ...item, sampledTraceIds: item.sampledTraceIds.map(id => resolveIdentity(state, 'trace', id)) })) }
+      const snapshots = [...(state.datasetSamplingSnapshots ?? []), applied]
+      return finalize(state, event, { ...merged, datasetSamplingSnapshots: snapshots })
+    }
     case 'FREEZE_DATASET_VERSION': {
       const current = state.datasets.find((item) => item.id === action.datasetId)
       if (!current || current.frozen || !current.name.trim() || !current.scope.trim() || !current.source.trim() || !current.population.sourceSystem.trim() || !current.population.countingRule.trim()) return state
@@ -441,18 +557,19 @@ export function evolutionReducer(state: EvolutionState, action: EvolutionAction)
       return finalize(state, event, { datasets: state.datasets.map((item) => item.id === action.datasetId ? { ...item, frozen: true, updatedAt: event.at } : item) })
     }
     case 'CREATE_EVALUATION_BATCH': {
-      if (state.evaluationBatches.some((item) => item.id === action.batch.id) || action.batch.traceIds.some((id) => !state.traces.some((trace) => trace.id === id))) return state
+      const traceIds = [...new Set(action.batch.traceIds.map((id) => resolveIdentity(state, 'trace', id)))]
+      if (state.evaluationBatches.some((item) => item.id === action.batch.id) || traceIds.some((id) => !state.traces.some((trace) => trace.id === id))) return state
       const eventAt = action.meta.at ?? new Date().toISOString()
-      const traceIds = [...new Set(action.batch.traceIds)]
       const placeholders = traceIds.map((traceId) => pendingPackage(state, action.batch, traceId, eventAt))
       const event = eventFor(action, 'EvaluationBatch', action.batch.id, { traceCount: traceIds.length, packageIds: placeholders.map((item) => item.id) })
       const batch = { ...action.batch, traceIds, packageIds: [...new Set([...action.batch.packageIds, ...placeholders.map((item) => item.id)])], jobIds: [...new Set(action.batch.jobIds)], stats: { ...action.batch.stats, inputTraceCount: traceIds.length, pendingCount: traceIds.length, successCount: 0, partialCount: 0, failedCount: 0 }, updatedAt: event.at }
       return finalize(state, event, { evaluationBatches: [...state.evaluationBatches, batch], tracePackages: [...state.tracePackages, ...placeholders] })
     }
     case 'QUEUE_EVALUATION_JOB': {
-      if (state.evaluationJobs.some((item) => item.id === action.job.id) || !state.evaluationBatches.some((batch) => batch.id === action.job.batchId) || action.job.traceIds.some((id) => !state.traces.some((trace) => trace.id === id))) return state
+      const traceIds = [...new Set(action.job.traceIds.map((id) => resolveIdentity(state, 'trace', id)))]
+      if (state.evaluationJobs.some((item) => item.id === action.job.id) || !state.evaluationBatches.some((batch) => batch.id === action.job.batchId) || traceIds.some((id) => !state.traces.some((trace) => trace.id === id))) return state
       const event = eventFor(action, 'EvaluationJob', action.job.id, { batchId: action.job.batchId, attempt: action.job.attempt })
-      const job = { ...action.job, status: action.job.status, updatedAt: event.at } as EvaluationJob
+      const job = { ...action.job, traceIds, processedTraceIds: action.job.processedTraceIds.map((id) => resolveIdentity(state, 'trace', id)), failedTraceIds: action.job.failedTraceIds.map((id) => resolveIdentity(state, 'trace', id)), status: action.job.status, updatedAt: event.at } as EvaluationJob
       const batches = state.evaluationBatches.map((batch) => batch.id !== job.batchId ? batch : { ...batch, jobIds: addUnique(batch.jobIds, job.id), status: batch.status === 'DRAFT' ? 'QUEUED' as const : batch.status, updatedAt: event.at })
       return finalize(state, event, { evaluationJobs: [...state.evaluationJobs, job], evaluationBatches: batches })
     }
@@ -524,20 +641,65 @@ export function evolutionReducer(state: EvolutionState, action: EvolutionAction)
       const batches = state.evaluationBatches.map((batch) => batch.id !== previous.batchId ? batch : { ...batch, jobIds: addUnique(batch.jobIds, retry.id), status: 'QUEUED' as const, updatedAt: event.at })
       return finalize(state, event, { evaluationJobs: [...state.evaluationJobs, retry], evaluationBatches: batches })
     }
+    case 'REVIEW_OUTCOME_DIMENSION': {
+      const input = { ...action.input, traceId: resolveIdentity(state, 'trace', action.input.traceId) }
+      const evaluation = state.outcomeEvals.find(item => item.id === input.evaluationId)
+      if (!evaluation) throw new Error('产物细项评测不存在，请刷新后重试')
+      validateOutcomeReviewInput(input, evaluation)
+      const trace = state.traces.find(item => item.id === input.traceId)
+      if (!trace || trace.caseId !== evaluation.caseId) throw new Error('产物评测不属于当前 Trace 或 Case')
+      const artifact = state.artifacts.find(item => item.id === input.artifactId)
+      if (!artifact || artifact.traceId !== input.traceId || artifact.caseId !== evaluation.caseId) throw new Error('产物不属于当前 Trace')
+      const projected = projectArtifactOutcomeEvaluation(state, evaluation)
+      const metadata = { rubricRule: projected.rubricRule, evalAgentVersion: projected.evalAgentVersion }
+      const duplicate = state.outcomeEvals.flatMap(item => item.revisions.map(revision => ({ evaluationId: item.id, revision }))).find(item => item.revision.id === input.reviewId)
+      if (duplicate) {
+        const candidate = toOutcomeReviewRevision(input, evaluation, metadata)
+        const { supersedesRevisionId: _old, ...old } = duplicate.revision
+        const { supersedesRevisionId: _candidate, ...next } = candidate
+        if (duplicate.evaluationId === evaluation.id && JSON.stringify(old) === JSON.stringify(next)) return state
+        throw new Error('复核记录 ID 重复，不能覆盖已有历史')
+      }
+      const revision = toOutcomeReviewRevision(input, evaluation, metadata)
+      const event = eventFor(action, 'OutcomeEval', evaluation.id, { reviewId: revision.id, traceId: input.traceId, artifactId: input.artifactId, automaticRevisionId: input.automaticRevisionId })
+      const outcomeEvals = state.outcomeEvals.map(item => item.id === evaluation.id ? { ...item, revisions: [...item.revisions, revision], updatedAt: event.at } : item)
+      return finalize(state, event, { outcomeEvals })
+    }
+    case 'REVIEW_TRACE_MODULE': {
+      const { input } = action
+      const pkg = state.tracePackages.find((item) => item.id === input.packageId)
+      const score = pkg?.moduleScores.find((item) => item.id === input.moduleScoreId)
+      if (!pkg || !score || pkg.traceId !== input.traceId || pkg.caseId !== score.caseId) throw new Error('复核范围与当前 Trace 评测包不匹配')
+      const revisions = state.moduleReviews ?? []
+      const duplicate = revisions.find((item) => item.id === input.reviewId)
+      if (duplicate) {
+        if (duplicate.moduleScoreId === input.moduleScoreId && duplicate.traceId === input.traceId && duplicate.packageId === input.packageId && duplicate.automaticRevisionId === input.automaticRevisionId && duplicate.humanScore === input.humanScore && duplicate.auxiliaryVerdict === input.auxiliaryVerdict && duplicate.reason === input.reason.trim() && duplicate.reviewer === input.reviewer.trim() && duplicate.reviewedAt === input.reviewedAt) return state
+        throw new Error('重复的复核记录 ID 已被其他内容使用')
+      }
+      const previous = revisions.filter((item) => item.moduleScoreId === score.id && item.traceId === score.traceId).at(-1)
+      const revision = toModuleReviewRevision(input, score, previous?.id)
+      const event = eventFor(action, 'ModuleReviewRevision', revision.id, { reviewId: revision.id, moduleScoreId: score.id, packageId: pkg.id, traceId: pkg.traceId })
+      const moduleScores = pkg.moduleScores.map((item) => item.id === score.id ? { ...item, automaticRevisionId: revision.automaticRevisionId, humanStatus: revision.auxiliaryVerdict, humanScore: revision.humanScore, humanNote: revision.reason, humanUpdatedAt: revision.reviewedAt, humanUpdatedBy: revision.reviewer, updatedAt: event.at } : item)
+      return finalize(state, event, { moduleReviews: [...revisions, revision], tracePackages: state.tracePackages.map((item) => item.id === pkg.id ? { ...item, moduleScores, updatedAt: event.at } : item) })
+    }
     case 'UPDATE_MODULE_EVALUATION': {
       const pkg = state.tracePackages.find((item) => item.id === action.packageId)
       if (!pkg || !pkg.moduleScores.some((score) => score.id === action.scoreId)) return state
       const event = eventFor(action, 'ModuleEvaluationScore', action.scoreId, action.patch as Record<string, unknown>)
+      const score = pkg.moduleScores.find((item) => item.id === action.scoreId)!
+      const previous = (state.moduleReviews ?? []).filter((item) => item.moduleScoreId === score.id).at(-1)
+      const revision = toModuleReviewRevision({ traceId: pkg.traceId, packageId: pkg.id, moduleScoreId: score.id, automaticRevisionId: automaticModuleRevisionId(score), humanScore: action.patch.humanScore, auxiliaryVerdict: action.patch.humanStatus ?? 'UNKNOWN', reason: action.patch.humanNote ?? action.meta.reason, reviewer: action.patch.humanUpdatedBy ?? action.meta.actor, reviewedAt: action.patch.humanUpdatedAt ?? event.at, reviewId: `module-review-${event.id}` }, score, previous?.id, 'LEGACY')
+      if (state.moduleReviews?.some((item) => item.id === revision.id)) return state
       const humanPatch: Partial<ModuleEvaluationScore> = {
-        humanStatus: action.patch.humanStatus,
-        humanScore: action.patch.humanScore,
-        humanNote: action.patch.humanNote,
-        humanUpdatedAt: action.patch.humanUpdatedAt ?? event.at,
-        humanUpdatedBy: action.patch.humanUpdatedBy ?? action.meta.actor
+        humanStatus: revision.auxiliaryVerdict,
+        humanScore: revision.humanScore,
+        humanNote: revision.reason,
+        humanUpdatedAt: revision.reviewedAt,
+        humanUpdatedBy: revision.reviewer
       }
-      const moduleScores = pkg.moduleScores.map((score) => score.id === action.scoreId ? { ...score, ...humanPatch, updatedAt: event.at } : score)
+      const moduleScores = pkg.moduleScores.map((score) => score.id === action.scoreId ? { ...score, ...humanPatch, automaticRevisionId: revision.automaticRevisionId, updatedAt: event.at } : score)
       const tracePackages = state.tracePackages.map((item) => item.id === pkg.id ? { ...item, moduleScores, updatedAt: event.at } : item)
-      return finalize(state, event, { tracePackages })
+      return finalize(state, event, { tracePackages, moduleReviews: [...(state.moduleReviews ?? []), revision] })
     }
     case 'UPDATE_EVALUATION_FINDING': {
       const current = state.evaluationFindings.find((item) => item.id === action.findingId)
@@ -584,18 +746,38 @@ export function evolutionReducer(state: EvolutionState, action: EvolutionAction)
 }
 
 export const initialEvolutionData = createInitialEvolutionData()
-interface EvolutionContextValue { state: EvolutionState; data: EvolutionState; dispatch: Dispatch<EvolutionAction>; reset: (actor?: string, reason?: string) => void }
+interface EvolutionContextValue { state: EvolutionState; data: EvolutionState; getState: () => EvolutionState; dispatch: Dispatch<EvolutionAction>; commit: (action: EvolutionAction) => Promise<void>; reset: (actor?: string, reason?: string) => void }
 const EvolutionContext = createContext<EvolutionContextValue | null>(null)
 
 export interface EvolutionProviderProps extends PropsWithChildren { repository?: EvolutionRepository; initialState?: EvolutionState }
 export function EvolutionProvider({ children, repository, initialState }: EvolutionProviderProps) {
   const persistence = useMemo(() => repository ?? createLocalEvolutionRepository(), [repository])
-  const [state, dispatch] = useReducer(evolutionReducer, initialState, (provided) => provided ?? persistence.load())
-  useEffect(() => { persistence.save(state) }, [persistence, state])
+  const [state, publish] = useReducer(evolutionReducer, initialState, (provided) => provided ?? persistence.load())
+  const current = useRef(state)
+  const persisted = useRef(state)
+  const getState = useCallback(() => current.current, [])
+  const dispatch = useCallback<Dispatch<EvolutionAction>>((action) => {
+    const next = evolutionReducer(current.current, action)
+    current.current = next
+    publish({ type: 'RESET', state: next })
+  }, [])
+  const commit = useCallback(async (action: EvolutionAction): Promise<void> => {
+    const next = evolutionReducer(current.current, action)
+    if (next === current.current) return
+    persistence.save(next)
+    persisted.current = next
+    current.current = next
+    publish({ type: 'RESET', state: next })
+  }, [persistence])
+  useEffect(() => {
+    if (persisted.current === state) return
+    persistence.save(state)
+    persisted.current = state
+  }, [persistence, state])
   const value = useMemo<EvolutionContextValue>(() => ({
-    state, data: state, dispatch,
+    state, data: state, getState, dispatch, commit,
     reset: (actor, reason) => dispatch({ type: 'RESET', state: persistence.reset(actor, reason) })
-  }), [persistence, state])
+  }), [persistence, state, getState, dispatch, commit])
   return createElement(EvolutionContext.Provider, { value }, children)
 }
 

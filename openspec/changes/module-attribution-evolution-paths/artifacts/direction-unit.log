@@ -1,0 +1,88 @@
+$ vitest run src/evolution/data/moduleEvolution.test.ts src/evolution/components/ModuleEvolutionDetail.test.tsx src/evolution/components/moduleEvolutionMatrix.test.tsx src/evolution/components/moduleEvolution.integration.test.tsx src/evolution/components/moduleReview.integration.test.tsx src/evolution/components/processEvaluationOwnership.test.tsx src/evolution/cases/fourTabReading.test.tsx src/evolution/cases/caseAnalysis.test.tsx src/evolution/components/moduleEvolutionDirectionRoute.integration.test.tsx src/App.integration.test.tsx
+
+ RUN  v2.1.9 /Users/yuanrongyan/Documents/ChatGPT/Agent管理前端页面
+
+ ✓ src/evolution/data/moduleEvolution.test.ts (31 tests) 4619ms
+   ✓ exact module-attribution evolution provenance > rejects cross-Trace, cross-package, cross-module and wrong attribution bindings 371ms
+   ✓ exact module-attribution evolution provenance > requires real same Trace, Case, package and module score provenance for old package history 537ms
+stderr | src/App.integration.test.tsx > Office Agent self-evolution app integration > opens the non-primary Trace owning an Observation-only bookmark
+⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+ ✓ src/App.integration.test.tsx (46 tests) 24063ms
+   ✓ Office Agent self-evolution app integration > opens the non-primary Trace owning an Observation-only bookmark 848ms
+   ✓ Office Agent self-evolution app integration > renders the four primary governance destinations and the new brand 304ms
+   ✓ Office Agent self-evolution app integration > routes a linked object ID to its owning page while preserving filters 469ms
+   ✓ Office Agent self-evolution app integration > keeps legacy deep links compatible without exposing them in primary navigation 335ms
+   ✓ Office Agent self-evolution app integration > clears an old object ID when switching primary navigation and keeps global filters 371ms
+   ✓ Office Agent self-evolution app integration > applies global version, business and environment filters to evolution Case data 317ms
+   ✓ Office Agent self-evolution app integration > opens owning-page details from every object ID query parameter 982ms
+   ✓ Office Agent self-evolution app integration > opens the case owning context from a stable typed deep link 414ms
+   ✓ Office Agent self-evolution app integration > opens the session owning context from a stable typed deep link 537ms
+   ✓ Office Agent self-evolution app integration > opens the trace owning context from a stable typed deep link 449ms
+   ✓ Office Agent self-evolution app integration > opens the observation owning context from a stable typed deep link 705ms
+   ✓ Office Agent self-evolution app integration > opens the log owning context from a stable typed deep link 687ms
+   ✓ Office Agent self-evolution app integration > opens the evidence owning context from a stable typed deep link 732ms
+   ✓ Office Agent self-evolution app integration > opens the artifact owning context from a stable typed deep link 347ms
+   ✓ Office Agent self-evolution app integration > opens the process-eval owning context from a stable typed deep link 787ms
+   ✓ Office Agent self-evolution app integration > opens the outcome-eval owning context from a stable typed deep link 467ms
+   ✓ Office Agent self-evolution app integration > opens the attribution owning context from a stable typed deep link 433ms
+   ✓ Office Agent self-evolution app integration > opens the issue owning context from a stable typed deep link 328ms
+   ✓ Office Agent self-evolution app integration > opens the cluster owning context from a stable typed deep link 382ms
+   ✓ Office Agent self-evolution app integration > opens the variant owning context from a stable typed deep link 364ms
+   ✓ Office Agent self-evolution app integration > opens the experiment-run owning context from a stable typed deep link 434ms
+   ✓ Office Agent self-evolution app integration > opens the window owning context from a stable typed deep link 339ms
+   ✓ Office Agent self-evolution app integration > opens the decision owning context from a stable typed deep link 355ms
+   ✓ Office Agent self-evolution app integration > opens the release owning context from a stable typed deep link 351ms
+   ✓ Office Agent self-evolution app integration > routes a Log typed ID to its exact owning Case and Log drawer 682ms
+   ✓ Office Agent self-evolution app integration > persists Case human confirmation through the evolution store 1172ms
+   ✓ Office Agent self-evolution app integration > rehydrates persisted Case confirmation after the provider is fully unmounted 2216ms
+   ✓ Office Agent self-evolution app integration > keeps legacy evaluation and issue references visible after redirect 1175ms
+   ✓ Office Agent self-evolution app integration > selects the exact non-primary Trace and Observation requested by URL 432ms
+   ✓ Office Agent self-evolution app integration > switches a multi-Trace Case in detail while retaining Case and global scope 537ms
+   ✓ Office Agent self-evolution app integration > revises only the explicitly selected attribution and preserves both histories 934ms
+   ✓ Office Agent self-evolution app integration > renders the real four-turn Session data with exact Trace links 419ms
+   ✓ Office Agent self-evolution app integration > syncs all Case local filters to URL and exposes a visible Skill filter 426ms
+   ✓ Office Agent self-evolution app integration > retains repeated routing tags and local filters through navigation and remount 821ms
+   ✓ Office Agent self-evolution app integration > does not hydrate Case-local URL fields into the global Quality filter store 528ms
+   ✓ Office Agent self-evolution app integration > restores global, Case-local, repeated, and detail URL layers through sequential changes, breadcrumb, and Back 906ms
+ ✓ src/evolution/cases/caseAnalysis.test.tsx (19 tests) 7775ms
+   ✓ Case / Trace analysis model > keeps time filtering anchored to immutable Query time after a later human edit 819ms
+   ✓ CaseAnalysisWorkbench > filters by numeric final score bands instead of PASS / FAIL labels 536ms
+   ✓ CaseAnalysisWorkbench > selects Trace rows and emits bulk dataset actions 469ms
+   ✓ CaseAnalysisWorkbench > uses semantic Case actions instead of stacking unexplained IDs under Query 471ms
+   ✓ CaseAnalysisWorkbench > opens governance first and separates the process matrix from artifact scores 1541ms
+   ✓ CaseAnalysisWorkbench > keeps Session, Trace, Evidence, artifact evaluations and governance links connected 1373ms
+   ✓ CaseAnalysisWorkbench > selects an exact Trace in a multi-Trace Case and targets an exact attribution revision 594ms
+   ✓ CaseAnalysisWorkbench > switches the active Trace and follows its own module evaluation package 355ms
+ ✓ src/evolution/components/ModuleEvolutionDetail.test.tsx (4 tests) 242ms
+ ✓ src/evolution/components/processEvaluationOwnership.test.tsx (4 tests) 1383ms
+   ✓ process evaluation belongs to one module presentation > opens an exact linked process evaluation with its reason and Evidence, and never substitutes a sibling Trace record 452ms
+   ✓ process evaluation belongs to one module presentation > keeps Outcome out of the process view and reveals scored dimensions and independent reasons in the matching module 326ms
+   ✓ process evaluation belongs to one module presentation > does not create independent Context scores or silently assign an unlinked result to Reason 302ms
+   ✓ process evaluation belongs to one module presentation > preserves explicit 0–2 automatic scores and leaves final aggregation unchanged 303ms
+ ✓ src/evolution/components/moduleEvolution.integration.test.tsx (3 tests) 2053ms
+   ✓ Trace module attribution to exact evolution workbench > opens independent Skill deliveries and preserves the original module, Trace and filters on return 748ms
+   ✓ Trace module attribution to exact evolution workbench > restores an exact process fine item and refuses to replace a missing fine item with its module score 643ms
+   ✓ Trace module attribution to exact evolution workbench > lets route state own the open module layer and clears it when the route closes 660ms
+ ✓ src/evolution/components/moduleReview.integration.test.tsx (5 tests) 789ms
+   ✓ current Trace module review UI > opens the current module review explicitly and routes the history to the owning governance area 462ms
+   ✓ current Trace module review UI > shows an independent evaluation automatic reason and human reason in separate fields 305ms
+stderr | src/evolution/components/moduleEvolutionDirectionRoute.integration.test.tsx > URL-owned module evolution direction history > keeps direction outside global filters and restores URL selection on refresh, Back and Forward
+⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+ ✓ src/evolution/components/moduleEvolutionDirectionRoute.integration.test.tsx (2 tests) 3960ms
+   ✓ URL-owned module evolution direction history > keeps direction outside global filters and restores URL selection on refresh, Back and Forward 2209ms
+   ✓ URL-owned module evolution direction history > carries the chosen direction through the exact dataset return link and clears it on module close or tab switch 1750ms
+ ✓ src/evolution/components/moduleEvolutionMatrix.test.tsx (3 tests) 95ms
+ ✓ src/evolution/cases/fourTabReading.test.tsx (3 tests) 1297ms
+   ✓ four-tab Trace reading > opens governance first with four tabs and one latest status column 330ms
+   ✓ four-tab Trace reading > keeps process scoring and Artifact scoring in separate owning tabs 305ms
+   ✓ four-tab Trace reading > restores routed evaluation and its module after governance without retaining a local tab override 662ms
+
+ Test Files  10 passed (10)
+      Tests  120 passed (120)
+   Start at  21:45:33
+   Duration  60.88s (transform 1.01s, setup 1.03s, collect 6.53s, tests 46.28s, environment 3.54s, prepare 598ms)
+

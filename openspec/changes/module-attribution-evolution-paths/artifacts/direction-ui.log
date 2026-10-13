@@ -1,0 +1,23 @@
+$ vitest run src/evolution/components/ModuleEvolutionDetail.test.tsx src/evolution/components/moduleEvolutionMatrix.test.tsx src/evolution/components/moduleEvolution.integration.test.tsx src/evolution/components/moduleEvolutionDirectionRoute.integration.test.tsx
+
+ RUN  v2.1.9 /Users/yuanrongyan/Documents/ChatGPT/Agent管理前端页面
+
+ ✓ src/evolution/components/ModuleEvolutionDetail.test.tsx (5 tests) 250ms
+ ✓ src/evolution/components/moduleEvolution.integration.test.tsx (3 tests) 1773ms
+   ✓ Trace module attribution to exact evolution workbench > opens independent Skill deliveries and preserves the original module, Trace and filters on return 581ms
+   ✓ Trace module attribution to exact evolution workbench > restores an exact process fine item and refuses to replace a missing fine item with its module score 590ms
+   ✓ Trace module attribution to exact evolution workbench > lets route state own the open module layer and clears it when the route closes 601ms
+stderr | src/evolution/components/moduleEvolutionDirectionRoute.integration.test.tsx > URL-owned module evolution direction history > keeps direction outside global filters and restores URL selection on refresh, Back and Forward
+⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+
+ ✓ src/evolution/components/moduleEvolutionDirectionRoute.integration.test.tsx (2 tests) 3419ms
+   ✓ URL-owned module evolution direction history > keeps direction outside global filters and restores URL selection on refresh, Back and Forward 2093ms
+   ✓ URL-owned module evolution direction history > carries the chosen direction through the exact dataset return link and clears it on module close or tab switch 1325ms
+ ✓ src/evolution/components/moduleEvolutionMatrix.test.tsx (3 tests) 94ms
+
+ Test Files  4 passed (4)
+      Tests  13 passed (13)
+   Start at  21:51:34
+   Duration  11.27s (transform 830ms, setup 435ms, collect 2.56s, tests 5.54s, environment 1.58s, prepare 290ms)
+

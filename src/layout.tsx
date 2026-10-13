@@ -34,10 +34,11 @@ export interface NavigationItem {
 }
 
 export const NAV_ITEMS: NavigationItem[] = [
-  { path: '/overview', label: '治理总览', shortLabel: '总览', description: '质量、过程、性能与自进化漏斗', icon: LayoutDashboard },
+  { path: '/overview', label: '治理总览', shortLabel: '总览', description: '产物结果、资产进化与过程表现', icon: LayoutDashboard },
   { path: '/cases', label: 'Case / Trace 分析', shortLabel: 'Case', description: '从线上任务定位 Trace、Evidence 与治理进度', icon: ListTree },
-  { path: '/datasets-evaluations', label: '数据集与评测', shortLabel: '数据评测', description: '按 Skill 版本与归因管理数据集和评测历史', icon: ClipboardCheck },
-  { path: '/rules', label: '规则配置', shortLabel: '规则', description: '触发门槛、实验次数与指标门禁', icon: SlidersHorizontal }
+  { path: '/datasets-evaluations', label: '数据集与评测', shortLabel: '数据评测', description: '按治理对象、固定源版本与归因管理数据集和评测历史', icon: ClipboardCheck },
+  { path: '/assets-skills', label: '资产管理', shortLabel: '资产', description: '资产版本、产物表现、Trace 贡献与进化历史', icon: Sparkles },
+  { path: '/rules', label: '规则配置', shortLabel: '规则', description: '按资产与归因配置准出、分流和聚类规则', icon: SlidersHorizontal }
 ]
 
 const TIME_OPTIONS: Array<{ value: FilterState['timeRange']; label: string }> = [
@@ -112,10 +113,13 @@ function GlobalFilterBar() {
   const { state: evolutionState } = useEvolution()
   const filters = state.filters
   const isDatasetEvaluationWorkbench = location.pathname === '/datasets-evaluations'
+  const isAssetManagement = location.pathname === '/assets-skills'
 
   const setFilter = useCallback(<K extends keyof FilterState>(key: K, value: FilterState[K]) => {
     dispatch({ type: 'SET_FILTERS', filters: { [key]: value } as Partial<FilterState> })
   }, [dispatch])
+
+  if (isAssetManagement || location.pathname === '/rules') return null
 
   const onSearchChange = (event: ChangeEvent<HTMLInputElement>) => setFilter('search', event.target.value)
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
@@ -305,7 +309,7 @@ export function DashboardLayout({ children }: { children?: ReactNode }) {
   // races with the state -> URL effect below and can overwrite a fresh user
   // selection with the previous URL for one render (or indefinitely).
   useEffect(() => {
-    const urlFilters = parseGlobalFilters(location.search, defaultFilters, { includeSkill: location.pathname !== '/datasets-evaluations' })
+    const urlFilters = parseGlobalFilters(location.search, defaultFilters, { includeSkill: !['/datasets-evaluations', '/assets-skills'].includes(location.pathname) })
     const currentGlobal = Object.fromEntries(GLOBAL_FILTER_KEYS.map((key) => [key, state.filters[key]])) as unknown as typeof urlFilters
     if (!filtersEqual(urlFilters, currentGlobal)) dispatch({ type: 'SET_FILTERS', filters: urlFilters })
   }, [dispatch, location.search, location.pathname])
@@ -319,9 +323,14 @@ export function DashboardLayout({ children }: { children?: ReactNode }) {
     if (filtersEqual(previousFiltersRef.current, state.filters)) return
     previousFiltersRef.current = state.filters
     const current = new URLSearchParams(location.search)
-    const isWorkbench = location.pathname === '/datasets-evaluations'
+    const isWorkbench = ['/datasets-evaluations', '/assets-skills'].includes(location.pathname)
     const encoded = new URLSearchParams(serializeGlobalFilters(isWorkbench ? { ...state.filters, skill: undefined } : state.filters))
-    FILTER_KEYS.forEach((key) => { if (!isWorkbench || key !== 'skill') current.delete(key) })
+    // Case / Trace custom windows use `timeRange=all` plus timeFrom/timeTo.
+    // The legacy global store only knows relative ranges, so preserve this
+    // route-owned sentinel while serializing the other global filters.
+    const preserveCaseWindow = location.pathname === '/cases' && current.get('timeRange') === 'all'
+    if (preserveCaseWindow) encoded.delete('timeRange')
+    FILTER_KEYS.forEach((key) => { if ((!isWorkbench || key !== 'skill') && !(preserveCaseWindow && key === 'timeRange')) current.delete(key) })
     encoded.forEach((value, key) => current.set(key, value))
     const nextSearch = current.toString()
     if (nextSearch !== location.search.replace(/^\?/, '')) {

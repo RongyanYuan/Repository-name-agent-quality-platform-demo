@@ -1,4 +1,9 @@
 import type { EvolutionState } from '../domain'
+import { createIdentityResolver } from '../identity'
+import { selectTraceGovernance } from './traceGovernance'
+import { validateAssetManagementState } from './assetManagement'
+import { validateScopedRule } from './scopedRules'
+import { validateDatasetExecutions } from './datasetExecutionValidation'
 
 export interface EvolutionValidationError { path: string; message: string }
 const ids = <T extends { id: string }>(items: T[]) => new Set(items.map((item) => item.id))
@@ -11,8 +16,49 @@ export function validateEvolutionState(state: EvolutionState): EvolutionValidati
   const processEvalIds = ids(state.processEvals); const outcomeEvalIds = ids(state.outcomeEvals); const attributionIds = ids(state.attributions)
   const issueIds = ids(state.issues); const clusterIds = ids(state.issueClusters); const variantIds = ids(state.variants)
   const datasetIds = ids(state.datasets); const experimentIds = ids(state.experiments); const runIds = ids(state.experimentRuns)
+  const evolutionRecordIds=ids(state.evolutionRecords ?? [])
   const windowIds = ids(state.windows); const decisionIds = ids(state.gateDecisions); const releaseIds = ids(state.releases)
   const skillIds = ids(state.skills); const assetIds = ids(state.assets); const ruleIds = ids(state.rules)
+  let resolveIdentity: ReturnType<typeof createIdentityResolver>
+  try { resolveIdentity = createIdentityResolver(state) }
+  catch (error) {
+    errors.push({ path: 'identityAliases', message: error instanceof Error ? error.message : String(error) })
+    resolveIdentity = (_kind, id) => id
+  }
+
+  for (const [kind, records] of [['session', state.sessions], ['trace', state.traces]] as const) {
+    const seen = new Set<string>()
+    records.forEach(item => {
+      if (seen.has(item.id)) errors.push({ path: `${kind}s.${item.id}`, message: `Duplicate ${kind} identity: ${item.id}` })
+      seen.add(item.id)
+    })
+  }
+  const seenAliases = new Map<string, string>()
+  ;(state.identityAliases ?? []).forEach((alias, index) => {
+    const key = `${alias.kind}:${alias.alias}`
+    if (seenAliases.has(key) && seenAliases.get(key) !== alias.canonicalId) errors.push({ path: `identityAliases.${index}`, message: `身份 alias 冲突：${key}` })
+    seenAliases.set(key, alias.canonicalId)
+    try {
+      const resolved = resolveIdentity(alias.kind, alias.alias)
+      requireId(alias.kind === 'trace' ? traceIds : sessionIds, resolved, `identityAliases.${index}.canonicalId`)
+    } catch (error) {
+      errors.push({ path: `identityAliases.${index}`, message: error instanceof Error ? error.message : String(error) })
+    }
+  })
+  const validateFrozenIdentityReferences = (value: unknown, path: string) => {
+    if (!value || typeof value !== 'object') return
+    if (Array.isArray(value)) { value.forEach((item, index) => validateFrozenIdentityReferences(item, `${path}.${index}`)); return }
+    Object.entries(value).forEach(([key, entry]) => {
+      if ((key === 'traceId' || key === 'sessionId') && typeof entry === 'string') {
+        const kind = key === 'traceId' ? 'trace' : 'session'
+        try { requireId(kind === 'trace' ? traceIds : sessionIds, resolveIdentity(kind, entry), `${path}.${key}`) }
+        catch (error) { errors.push({ path: `${path}.${key}`, message: error instanceof Error ? error.message : String(error) }) }
+      } else validateFrozenIdentityReferences(entry, `${path}.${key}`)
+    })
+  }
+  state.experiments.forEach(item => validateFrozenIdentityReferences(item.configSnapshot, `experiments.${item.id}.configSnapshot`))
+  state.experimentRuns.forEach(item => { validateFrozenIdentityReferences(item.configSnapshot, `experimentRuns.${item.id}.configSnapshot`); validateFrozenIdentityReferences(item.evalSnapshot, `experimentRuns.${item.id}.evalSnapshot`) })
+  state.gateDecisions.forEach(item => validateFrozenIdentityReferences(item.reportSnapshot, `gateDecisions.${item.id}.reportSnapshot`))
 
   state.cases.forEach((item) => {
     requireId(sessionIds, item.sessionId, `cases.${item.id}.sessionId`)
@@ -216,6 +262,44 @@ export function validateEvolutionState(state: EvolutionState): EvolutionValidati
   const findingIdsV2 = ids(state.evaluationFindings); const policyIds = ids(state.routingPolicies); const decisionIdsV2 = ids(state.routingDecisions)
   const deliveryIdsV2 = ids(state.routingDeliveries); const badcaseIdsV2 = ids(state.algorithmBadcases); const queueIds = ids(state.badcaseQueues)
   const logIds = new Set(state.observations.map((item) => item.logId))
+  state.tracePackages.forEach(pkg => pkg.moduleScores.forEach(score => {
+    requireId(traceIds, score.traceId, `tracePackages.${pkg.id}.moduleScores.${score.id}.traceId`)
+    requireId(caseIds, score.caseId, `tracePackages.${pkg.id}.moduleScores.${score.id}.caseId`)
+    if (score.traceId !== pkg.traceId || score.caseId !== pkg.caseId || score.packageId !== pkg.id) errors.push({ path: `tracePackages.${pkg.id}.moduleScores.${score.id}`, message: 'Module score must belong to its Trace package and Case' })
+  }))
+  ;(state.moduleReviews ?? []).forEach(review => {
+    requireId(traceIds, review.traceId, `moduleReviews.${review.id}.traceId`)
+    requireId(caseIds, review.caseId, `moduleReviews.${review.id}.caseId`)
+    requireId(packageIds, review.packageId, `moduleReviews.${review.id}.packageId`)
+    const pkg = state.tracePackages.find(item => item.id === review.packageId)
+    if (pkg && (pkg.traceId !== review.traceId || pkg.caseId !== review.caseId || !pkg.moduleScores.some(score => score.id === review.moduleScoreId))) errors.push({ path: `moduleReviews.${review.id}`, message: 'Module review must identify its exact Trace, package, and module' })
+    review.evidenceIds.forEach((id, index) => requireId(evidenceIds, id, `moduleReviews.${review.id}.evidenceIds.${index}`))
+  })
+  ;(state.datasetMemberships ?? []).forEach(membership => {
+    requireId(datasetIds, membership.datasetId, `datasetMemberships.${membership.id}.datasetId`)
+    requireId(caseIds, membership.caseId, `datasetMemberships.${membership.id}.caseId`)
+    membership.traceIds.forEach((id, index) => {
+      requireId(traceIds, id, `datasetMemberships.${membership.id}.traceIds.${index}`)
+      if (state.traces.some(trace => trace.id === id && trace.caseId !== membership.caseId)) errors.push({ path: `datasetMemberships.${membership.id}.traceIds.${index}`, message: 'Dataset membership Trace must belong to its Case' })
+    })
+  })
+  ;(state.datasetSamplingSnapshots ?? []).forEach(snapshot => {
+    requireId(datasetIds, snapshot.datasetId, `datasetSamplingSnapshots.${snapshot.id}.datasetId`)
+    snapshot.candidateTraceIds.forEach((id, index) => requireId(traceIds, id, `datasetSamplingSnapshots.${snapshot.id}.candidateTraceIds.${index}`))
+    const sampled = snapshot.allocations.flatMap(item => item.sampledTraceIds)
+    sampled.forEach((id, index) => requireId(traceIds, id, `datasetSamplingSnapshots.${snapshot.id}.allocations.sampledTraceIds.${index}`))
+    if (new Set(sampled).size !== sampled.length || snapshot.deduplicatedTraceCount !== new Set(sampled).size) errors.push({ path: `datasetSamplingSnapshots.${snapshot.id}.deduplicatedTraceCount`, message: 'Sampling snapshot must de-duplicate Trace IDs across evolution items' })
+    if (snapshot.requestedCount < 0 || snapshot.allocations.some(item => item.requestedCount < 0 || item.historicalTraceCount < 0 || item.historicalShare < 0 || item.historicalShare > 1)) errors.push({ path: `datasetSamplingSnapshots.${snapshot.id}`, message: 'Sampling counts and shares must be non-negative and bounded' })
+  })
+  ;(state.governanceEvents ?? []).forEach(event => {
+    requireId(traceIds, event.traceId, `governanceEvents.${event.id}.traceId`)
+    requireId(caseIds, event.caseId, `governanceEvents.${event.id}.caseId`)
+    if (state.traces.some(trace => trace.id === event.traceId && trace.caseId !== event.caseId)) errors.push({ path: `governanceEvents.${event.id}.caseId`, message: 'Governance event Trace must belong to its Case' })
+    const references = [...(event.sourceRef ? [event.sourceRef] : []), ...event.targetRefs]
+    references.forEach((reference, index) => {
+      if (reference.kind === 'trace' || reference.kind === 'session') requireId(reference.kind === 'trace' ? traceIds : sessionIds, reference.id, `governanceEvents.${event.id}.references.${index}`)
+    })
+  })
   const validateBundle = (bundle: { rootEvidenceIds?: string[]; observationIds?: string[]; logIds?: string[] }, path: string) => {
     bundle.rootEvidenceIds?.forEach((id, index) => requireId(evidenceIds, id, `${path}.rootEvidenceIds.${index}`))
     bundle.observationIds?.forEach((id, index) => requireId(observationIds, id, `${path}.observationIds.${index}`))
@@ -241,5 +325,52 @@ export function validateEvolutionState(state: EvolutionState): EvolutionValidati
     state.experiments.forEach((experiment) => experiment.metrics.forEach((metric, index) => { if (metric.gateStatus !== 'PENDING') errors.push({ path: `experiments.${experiment.id}.metrics.${index}.gateStatus`, message: 'Metric gate must remain pending while the business threshold is pending' }) }))
     state.gateDecisions.filter((decision) => decision.conclusion === 'PASS').forEach((decision) => { if (decision.decisionBasis !== 'HUMAN_REVIEW') errors.push({ path: `gateDecisions.${decision.id}.decisionBasis`, message: 'A PASS without configured thresholds must be an explicit human review decision' }) })
   }
+  for(const binding of state.moduleEvolutionBindings ?? []){
+    const path=`moduleEvolutionBindings.${binding.id}`
+    const pkg=state.tracePackages.find(item=>item.id===binding.packageId)
+    const score=pkg?.moduleScores.find(item=>item.id===binding.moduleScoreId)
+    const finding=state.evaluationFindings.find(item=>item.id===binding.findingId)
+    requireId(traceIds,binding.traceId,`${path}.traceId`)
+    if(!pkg || !score || score.traceId!==binding.traceId || pkg.traceId!==binding.traceId)errors.push({path,message:'Module binding must identify its exact Trace package and score'})
+    if(!finding || finding.traceId!==binding.traceId || finding.packageId!==binding.packageId || finding.moduleCode!==score?.moduleCode)errors.push({path:`${path}.findingId`,message:'Finding must belong to the same scored Trace and module'})
+    if(!binding.automaticRevisionId.trim())errors.push({path:`${path}.automaticRevisionId`,message:'Automatic revision identity is required'})
+    if(binding.attributionRecordId){requireId(attributionIds,binding.attributionRecordId,`${path}.attributionRecordId`);const attr=state.attributions.find(item=>item.id===binding.attributionRecordId);if(attr && attr.traceId!==binding.traceId)errors.push({path,message:'Attribution binding must belong to the same Trace'})}
+    if(binding.processEvaluationId){requireId(processEvalIds,binding.processEvaluationId,`${path}.processEvaluationId`);const evaluation=state.processEvals.find(item=>item.id===binding.processEvaluationId);if(evaluation && evaluation.traceId!==binding.traceId)errors.push({path,message:'Process evaluation binding must belong to the same Trace'})}
+    for(const id of binding.evolutionRecordIds)requireId(evolutionRecordIds,id,`${path}.evolutionRecordIds`)
+  }
+  for(const record of state.evolutionRecords ?? []){
+    const path=`evolutionRecords.${record.id}`,target=record.target
+    if(target.kind==='SKILL'){requireId(skillIds,target.skillId,`${path}.target.skillId`);if(!target.skillVersion.trim())errors.push({path:`${path}.target.skillVersion`,message:'A Skill target requires a fixed source version'})}
+    else if('skillId' in target || 'skillVersion' in target)errors.push({path:`${path}.target`,message:'A module target cannot carry a Skill identity or version'})
+    if(!target.attributionId.trim())errors.push({path:`${path}.target.attributionId`,message:'A target attribution is required'})
+    const findingIds=ids(state.evaluationFindings),deliveryIds=ids(state.routingDeliveries)
+    const refs=[['sourceFindingIds',findingIds],['sourceAttributionIds',attributionIds],['sourceIssueIds',issueIds],['sourceClusterIds',clusterIds],['routingDeliveryIds',deliveryIds],['datasetIds',datasetIds],['variantIds',variantIds],['singleExperimentIds',experimentIds],['windowExperimentIds',experimentIds],['decisionIds',decisionIds],['releaseIds',releaseIds]] as const
+    for(const [key,known] of refs)for(const id of record[key])requireId(known,id,`${path}.${key}`)
+    if(record.supersedesRecordId){requireId(evolutionRecordIds,record.supersedesRecordId,`${path}.supersedesRecordId`);if(record.supersedesRecordId===record.id)errors.push({path,message:'Evolution record cannot supersede itself'})}
+  }
+  const persistedEvents=new Map((state.governanceEvents ?? []).map(event=>[event.id,event]))
+  const projections=new Map<string,ReturnType<typeof selectTraceGovernance>>()
+  for(const event of state.governanceEvents ?? []) {
+    if(!event.parentEventIds?.length)continue
+    if(!projections.has(event.traceId))projections.set(event.traceId,selectTraceGovernance(state,event.traceId))
+    const projected=new Map(projections.get(event.traceId)!.events.map(item=>[item.id,item]))
+    for(const [index,id] of event.parentEventIds.entries()) {
+      const parent=persistedEvents.get(id) ?? projected.get(id)
+      if(!parent)errors.push({path:`governanceEvents.${event.id}.parentEventIds.${index}`,message:`Missing parent event: ${id}`})
+      else if(parent.traceId!==event.traceId)errors.push({path:`governanceEvents.${event.id}.parentEventIds.${index}`,message:'Parent event must belong to the same Trace'})
+    }
+  }
+  const visiting=new Set<string>(), visited=new Set<string>()
+  const visit=(id:string):void=>{
+    if(visiting.has(id)){errors.push({path:`governanceEvents.${id}.parentEventIds`,message:'Governance parent relationships contain a cycle'});return}
+    if(visited.has(id))return
+    visiting.add(id)
+    for(const parentId of persistedEvents.get(id)?.parentEventIds ?? [])if(persistedEvents.has(parentId))visit(parentId)
+    visiting.delete(id);visited.add(id)
+  }
+  for(const id of persistedEvents.keys())visit(id)
+  errors.push(...validateAssetManagementState(state))
+  errors.push(...validateDatasetExecutions(state))
+  state.rules.forEach(rule => errors.push(...validateScopedRule(state, rule)))
   return errors
 }

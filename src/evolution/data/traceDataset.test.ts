@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { createInitialEvolutionData } from '../data'
 import { traceRows, filterTraceRows, datasetRows, datasetTraceRows, importTraceCases } from './traceDataset'
 import { mergeCaseLocalFilters, parseCaseLocalFilters } from '../../urlState'
+import { resolveIdentity } from '../identity'
 
 describe('Trace and dataset contracts', () => {
   it('returns every Trace once, including online and dataset members', () => {
@@ -21,9 +22,11 @@ describe('Trace and dataset contracts', () => {
     expect(filterTraceRows(rows, { processMin: 2, processMax: 1 })).toEqual([])
   })
   it('retains zero ranges and all new filters in URL', () => {
-    const search = mergeCaseLocalFilters('?environment=Production', { channel: '小程序', verticalScenario: '生图', processMin: 0, processMax: 2, outcomeMin: 0, tokenMax: 3000, evolutionItem: 'skill-sop' })
-    expect(parseCaseLocalFilters(search)).toMatchObject({ channel: '小程序', verticalScenario: '生图', processMin: 0, processMax: 2, outcomeMin: 0, tokenMax: 3000, evolutionItem: 'skill-sop' })
+    const search = mergeCaseLocalFilters('?environment=Production', { channel: '小程序', verticalScenario: '生图', processMin: 0, processMax: 2, outcomeMin: 0, tokenMax: 3000, evolutionItem: 'skill-sop', timeFrom: '2026-10-01T00:00:00.000Z', timeTo: '2026-10-07T23:59:59.999Z', timeWindowId: 'window-2026w35', datasetCategory: 'PERSONAL', datasetPurpose: '相邻及无关回归集', datasetId: 'dataset-personal-ppt-regression' })
+    expect(parseCaseLocalFilters(search)).toMatchObject({ channel: '小程序', verticalScenario: '生图', processMin: 0, processMax: 2, outcomeMin: 0, tokenMax: 3000, evolutionItem: 'skill-sop', timeFrom: '2026-10-01T00:00:00.000Z', timeTo: '2026-10-07T23:59:59.999Z', timeWindowId: 'window-2026w35', datasetCategory: 'PERSONAL', datasetPurpose: '相邻及无关回归集', datasetId: 'dataset-personal-ppt-regression' })
     expect(search).toContain('environment=Production')
+    const custom = mergeCaseLocalFilters('?timeRange=30d', { timeFrom: '2026-09-01T00:00:00.000Z', timeTo: '2026-09-03T23:59:59.999Z' })
+    expect(parseCaseLocalFilters(custom)).toMatchObject({ timeRange: 'all', timeFrom: '2026-09-01T00:00:00.000Z', timeTo: '2026-09-03T23:59:59.999Z' })
   })
   it('filters target pairs exactly and does not infer gate PASS from completed experiments', () => {
     const state = createInitialEvolutionData()
@@ -83,8 +86,22 @@ describe('Trace and dataset contracts', () => {
   it('shows only member Trace rows and does not invent unexpanded external samples', () => {
     const state = createInitialEvolutionData()
     const dataset = { ...state.datasets[0], caseIds: ['case-ppt-management'], sampleCount: 100 }
-    expect(datasetTraceRows(state, dataset).map(row => row.trace.id)).toEqual(['trace-ppt-context', 'trace-ppt-generate'])
+    expect(datasetTraceRows(state, dataset).map(row => row.trace.id)).toEqual(['trace-ppt-context', 'trace-ppt-generate'].map(id => resolveIdentity(state, 'trace', id)))
     expect(datasetTraceRows(state, { ...dataset, caseIds: [] })).toEqual([])
+  })
+  it('uses explicit Trace membership for samples, counts and labels without enrolling a sibling Trace', () => {
+    const state = createInitialEvolutionData()
+    const dataset = { ...state.datasets[0], id: 'dataset-exact-trace-scope', name: '精确来源集', caseIds: ['case-ppt-management'], sampleCount: 1 }
+    const generation = resolveIdentity(state, 'trace', 'trace-ppt-generate')
+    const sibling = resolveIdentity(state, 'trace', 'trace-ppt-context')
+    state.datasets = [dataset]
+    state.datasetMemberships = [{ id: 'membership-exact-trace-scope', datasetId: dataset.id, datasetVersion: dataset.version, caseId: 'case-ppt-management', traceIds: [generation], scope: 'TRACE', joinedAt: '2026-10-06T01:00:00Z', actor: 'Mock 评测 Agent', origin: 'MOCK' }]
+    expect(datasetTraceRows(state, dataset).map(row => row.trace.id)).toEqual([generation])
+    expect(datasetRows(state)[0].traceIds).toEqual([generation])
+    expect(traceRows(state).find(row => row.trace.id === sibling)?.datasets).toEqual([])
+    expect(traceRows(state).find(row => row.trace.id === generation)?.datasets.map(item => item.id)).toEqual([dataset.id])
+    state.datasetMemberships[0].scope = 'CASE_SHARED'
+    expect(datasetTraceRows(state, dataset).map(row => row.trace.id)).toEqual([sibling, generation])
   })
   it('does not label queued or draft experiments as evaluated before any result exists', () => {
     const state = createInitialEvolutionData()
@@ -117,5 +134,56 @@ describe('Trace and dataset contracts', () => {
     expect(state.gateDecisions[0]).toMatchObject({ id: 'gate-old-pass', conclusion: 'PASS' })
     state.gateDecisions[0].experimentId = 'new-running'
     expect(datasetRows(state, { skillId: target.skillId, skillVersion: target.skillVersion, attribution: target.evolutionItemId })[0].gate).toBe('待决策')
+  })
+  it('records the actual selected Traces together when a shared Case is successfully imported', () => {
+    const state = createInitialEvolutionData()
+    state.datasets = []; state.datasetMemberships = []; state.governanceEvents = []
+    const rows = traceRows(state).filter(row => row.case.id === 'case-ppt-management')
+    const result = importTraceCases(state, [rows[1].trace.id, rows[0].trace.id, rows[1].trace.id], 'evaluation', '新评测集', '2026-10-12T04:05:06Z')
+    expect(result.addedCaseIds).toEqual(['case-ppt-management'])
+    expect(result.state.datasetMemberships).toHaveLength(1)
+    expect(result.state.datasetMemberships?.[0]).toMatchObject({ traceIds: [rows[1].trace.id, rows[0].trace.id], scope: 'TRACE', joinedAt: '2026-10-12T04:05:06Z', origin: 'LOCAL' })
+    expect(result.state.governanceEvents?.filter(item => item.stage === 'DATASET').map(item => item.traceId).sort()).toEqual(rows.map(row => row.trace.id).sort())
+    expect(traceRows(result.state).find(row => row.trace.id === rows[1].trace.id)?.governance.memberships[0].scope).toBe('TRACE')
+  })
+  it('records a single selected Trace without treating its sibling as individually enrolled', () => {
+    const state = createInitialEvolutionData()
+    state.datasets = []; state.datasetMemberships = []; state.governanceEvents = []
+    const rows = traceRows(state).filter(row => row.case.id === 'case-ppt-management')
+    const result = importTraceCases(state, [rows[1].trace.id], 'evaluation', '新评测集', '2026-10-12T04:05:06Z')
+    expect(result.state.datasetMemberships?.[0].traceIds).toEqual([rows[1].trace.id])
+    expect(traceRows(result.state).find(row => row.trace.id === rows[0].trace.id)?.governance.memberships[0]).toMatchObject({ scope: 'CASE_SHARED', joinedAt: undefined })
+  })
+  it('does not rewrite frozen datasets or append enrollment events on blocked imports', () => {
+    const state = createInitialEvolutionData()
+    const source = traceRows(state).find(row => !row.datasets.length)!
+    state.datasets = [{ ...state.datasets[0], purpose: '原始归因集', frozen: true }]
+    state.governanceEvents = []; state.datasetMemberships = []
+    const before = structuredClone(state.datasets[0])
+    const result = importTraceCases(state, [source.trace.id], 'evaluation', '冻结集', '2026-10-12T04:05:06Z')
+    expect(result.addedCaseIds).toEqual([])
+    expect(result.blocked[0].reason).toContain('冻结')
+    expect(result.state.datasets[0]).toEqual(before)
+    expect(result.state.governanceEvents).toEqual([])
+    expect(result.state.datasetMemberships).toEqual([])
+  })
+  it('uses the newest evaluation package for dataset rows instead of a prior completed score', () => {
+    const state = createInitialEvolutionData()
+    const source = state.tracePackages.find(item => item.rating?.processFinal !== undefined)!
+    state.tracePackages.push({ ...structuredClone(source), id: 'newer-trace-package', createdAt: '2026-10-12T12:00:00Z', updatedAt: '2026-10-12T12:00:00Z', rating: { ...source.rating!, processFinal: 0.11 } })
+    const row = traceRows(state).find(item => item.trace.id === source.traceId)!
+    expect(row.package?.id).toBe('newer-trace-package')
+    expect(row.rating?.processFinal).toBe(0.11)
+  })
+  it('leaves unrecorded final scores missing while respecting each module explicit scale', () => {
+    const state = createInitialEvolutionData()
+    const source = state.tracePackages[0]
+    source.rating = undefined
+    source.moduleScores = source.moduleScores.slice(0, 2).map((score, index) => ({ ...score, moduleCode: index === 0 ? 'SKILL' : 'ACT', score: index === 0 ? 0.5 : 0.75, scoreScale: index === 0 ? '0-2' : '0-1' }))
+    state.tracePackages = [source]
+    const rating = traceRows(state).find(item => item.trace.id === source.traceId)?.rating
+    expect(rating?.processFinal).toBeUndefined()
+    expect(rating?.outcomeFinal).toBeUndefined()
+    expect(rating?.processDimensions.map(item => item.score)).toEqual([0.5, 1.5])
   })
 })

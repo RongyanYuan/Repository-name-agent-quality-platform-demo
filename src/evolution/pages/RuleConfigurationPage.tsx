@@ -1,28 +1,185 @@
-import { Settings2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
-import { useLocation } from 'react-router-dom'
-import { Button, DataTable, Field, FilterBar, Modal, SectionHeader, StatusBadge, Tabs, TextInput, type Column } from '../../ui'
-import { EntityId, KeyValueGrid, PageHeading, PendingBlock } from '../components/ViewPrimitives'
-import { useScopedEvolution } from '../scope'
-import { dateText, entities, Section, text, type AnyEntity, type AnyState } from './shared'
+import { GitBranch, Route, ShieldCheck, type LucideIcon } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useLocation, useSearchParams } from 'react-router-dom'
+import { Button, Field, Modal, SectionHeader, SelectInput, StatusBadge, TextInput } from '../../ui'
+import type { AssetCatalogKind, RuleConfig, RuleScope, ScopedRuleType } from '../domain'
+import { EntityId, KeyValueGrid } from '../components/ViewPrimitives'
+import { useEvolution } from '../store'
+import { ASSET_CATALOG_KIND_LABELS } from '../data/assetManagement'
+import { createScopedRule, isTasteClusterScope, resolveScopedRule, ruleAttributionsForAsset, ruleScopeId, validateScopedRule } from '../data/scopedRules'
+import { governanceItemLabel } from '../governanceTaxonomy'
+import { dateText, Section } from './shared'
 import { DETAIL_KEYS, useContextNavigation } from '../../layout'
 
-const labels: Record<string, string> = { TRIGGER: '触发门槛', EXPERIMENT: '实验运行', GATE: '指标门禁', MONITORING: '监控 Baseline' }
+const categories: Array<{ type: ScopedRuleType; title: string; description: string; icon: LucideIcon }> = [
+  { type: 'GATE', title: '指标准出门禁', description: '配置过程、产物和泛化得分门槛。', icon: ShieldCheck },
+  { type: 'ROUTING', title: '分流规则', description: '配置策略迭代、Agent 迭代及责任人。', icon: Route },
+  { type: 'CLUSTER', title: '聚类规则', description: '配置相关 Case 触发数与统计窗口。', icon: GitBranch }
+]
+const validType = (value: string | null): ScopedRuleType | undefined => categories.find(item => item.type === value)?.type
+const numberValue = (value: string) => value.trim() ? Number(value) : undefined
+interface Draft { processMin: string; outcomeMin: string; generalizationMin: string; requireHumanReview: boolean; strategy: boolean; agent: boolean; owner: string; minCases: string; windowDays: string }
+const emptyDraft = (): Draft => ({ processMin: '', outcomeMin: '', generalizationMin: '', requireHumanReview: true, strategy: false, agent: false, owner: '', minCases: '', windowDays: '' })
+
 export function RuleConfigurationPage({ initialRuleId }: { initialRuleId?: string } = {}) {
-  const location = useLocation(); const { navigateContext } = useContextNavigation()
-  const { scopedState: state, dispatch } = useScopedEvolution(); const rules = entities(state as unknown as AnyState, 'rules')
-  const [category, setCategory] = useState('ALL'); const [query, setQuery] = useState(''); const [selectedId, setSelectedId] = useState(initialRuleId); const [editOpen, setEditOpen] = useState(false); const [value, setValue] = useState('')
-  const selected = rules.find((item) => item.id === selectedId); const filtered = useMemo(() => rules.filter((item) => (category === 'ALL' || text(item.category) === category) && (!query.trim() || [item.id, item.name, item.description, item.status].join(' ').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))), [category, query, rules])
-  const columns: Column<AnyEntity>[] = [{ key: 'name', header: '规则', accessor: (row) => <div><span className="font-semibold">{text(row.name)}</span><p className="mt-1 text-[11px] text-muted">{text(row.description)}</p></div> }, { key: 'category', header: '类型', accessor: (row) => labels[text(row.category)] ?? text(row.category) }, { key: 'value', header: '当前值', accessor: (row) => text(row.status) === 'PENDING' ? '—' : `${String(row.value ?? '—')} ${text(row.unit, '')}` }, { key: 'status', header: '状态', accessor: (row) => <StatusBadge status={text(row.status)} label={text(row.status) === 'PENDING' ? '待配置' : '已配置'} tone={text(row.status) === 'PENDING' ? 'warn' : 'pass'} /> }, { key: 'updatedAt', header: '更新时间', accessor: (row) => dateText(row.updatedAt) }]
-  const save = () => { if (!selected || !value.trim()) return; const parsed = Number(value); dispatch({ type: 'UPDATE_RULE', ruleId: selected.id, patch: { status: 'CONFIGURED', value: Number.isFinite(parsed) ? parsed : value.trim() }, meta: { actor: '当前用户', reason: '人工配置治理规则' } }); setEditOpen(false) }
-  const selectedIdentity = selected ? <EntityId id={selected.id} kind="rule" onOpen={(target) => { setSelectedId(target.id); if (new URLSearchParams(location.search).get('ruleId') !== target.id) navigateContext('/rules', { clear: DETAIL_KEYS, params: { ruleId: target.id } }) }} /> : null
-  return <div><PageHeading eyebrow="GOVERNANCE RULES" title="规则配置" description="管理触发门槛、实验次数与指标门禁；未确定规则保持待配置。" />
-    <Tabs variant="pill" activeId={category} onChange={setCategory} items={[{ id: 'ALL', label: '全部', count: rules.length }, ...['TRIGGER', 'EXPERIMENT', 'GATE', 'MONITORING'].map((id) => ({ id, label: labels[id], count: rules.filter((item) => item.category === id).length }))]} />
-    <FilterBar className="mt-4" searchValue={query} onSearchChange={setQuery} searchPlaceholder="搜索规则名称或说明" resultCount={filtered.length} onReset={() => setQuery('')} />
-    <Section className="mt-4"><SectionHeader title="治理规则" description="品味库 100 条口径可查看，其余门槛由用户配置。" actions={<Settings2 className="h-4 w-4 text-accent" />} /><DataTable className="mt-3" caption="治理规则配置列表" rows={filtered} columns={columns} rowKey={(row) => row.id} onRowClick={(row) => setSelectedId(row.id)} /></Section>
-    <div className="mt-4 grid gap-4 lg:grid-cols-2"><PendingBlock title="指标准出门禁" description="结果 / 过程 / 泛化指标门禁尚未由 PRD 给出阈值；当前只保留配置入口和待配置状态。" /><PendingBlock title="监控 Baseline" description="总耗时、TTFT 与成本 Baseline 尚未建立；页面只展示原始数据，不推断效率结论。" /></div>
-    <Section className="mt-4"><SectionHeader eyebrow="V2 CONTROL PLANE" title="批次、分流与实验规则视图" description="评测批次、Routing Delivery、Badcase 确认、实验重复次数和准出门禁均可在这里核对；未知业务阈值显示为待配置。" /><div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">{['TRIGGER', 'EXPERIMENT', 'GATE', 'MONITORING'].map((category) => { const categoryRules = rules.filter((item) => text(item.category) === category); return <div key={category} className="rounded-md border border-line bg-slate-50/70 p-3"><div className="flex items-center justify-between gap-2"><h3 className="text-xs font-semibold text-ink">{labels[category]}</h3><span className="text-[10px] text-muted">{categoryRules.length} 条</span></div><div className="mt-3 space-y-2">{categoryRules.length ? categoryRules.map((rule) => <button key={rule.id} type="button" onClick={() => setSelectedId(rule.id)} className="block w-full rounded border border-line bg-panel p-2 text-left hover:border-accent/40"><div className="flex items-center justify-between gap-2"><span className="line-clamp-2 text-[11px] font-medium text-ink">{text(rule.name)}（控制面）</span><StatusBadge status={text(rule.status) === 'PENDING' ? '待配置' : '已配置'} tone={text(rule.status) === 'PENDING' ? 'warn' : 'pass'} showIcon={false} /></div><p className="mt-1 line-clamp-2 text-[10px] text-muted">{text(rule.description)}</p></button>) : <p className="text-[11px] text-muted">暂无规则记录</p>}</div></div>})}</div></Section>
-    {selected && <div className="fixed inset-0 z-40" role="dialog" aria-label="规则详情"><button className="absolute inset-0 bg-slate-950/25" aria-label="关闭遮罩" onClick={() => setSelectedId(undefined)} /><aside className="absolute inset-y-0 right-0 w-full max-w-xl overflow-y-auto border-l border-line bg-panel p-5 shadow-2xl"><div className="flex justify-between"><div><h2 className="text-base font-semibold">{text(selected.name)}</h2><p className="font-mono text-[10px] text-accent">{selectedIdentity}</p></div><div className="flex gap-2"><Button onClick={() => { setValue(selected.value === undefined ? '' : String(selected.value)); setEditOpen(true) }}>编辑规则</Button><button onClick={() => setSelectedId(undefined)} className="text-xs text-muted">关闭</button></div></div><Section className="mt-5"><SectionHeader title="规则定义" actions={<StatusBadge status={text(selected.status)} label={text(selected.status) === 'PENDING' ? '待配置' : '已配置'} />} /><KeyValueGrid className="mt-3" items={[{ label: '规则类别', value: labels[text(selected.category)] }, { label: '当前值', value: text(selected.status) === 'PENDING' ? '待配置' : `${String(selected.value)} ${text(selected.unit, '')}` }, { label: '口径说明', value: text(selected.description) }, { label: '更新时间', value: dateText(selected.updatedAt) }]} /></Section></aside></div>}
-    <Modal open={editOpen} onClose={() => setEditOpen(false)} title="编辑规则" footer={<div className="flex justify-end gap-2"><Button onClick={() => setEditOpen(false)}>取消</Button><Button variant="primary" onClick={save} disabled={!value.trim()}>保存规则</Button></div>}><Field label="规则值"><TextInput aria-label="规则值" value={value} onChange={(event) => setValue(event.target.value)} /></Field></Modal>
+  const location = useLocation()
+  const { navigateContext } = useContextNavigation()
+  const { state, commit } = useEvolution()
+  const [params, setParams] = useSearchParams()
+  const linked = state.rules.find(rule => rule.id === initialRuleId)
+  const type = validType(params.get('ruleType')) ?? linked?.configuration?.type
+  const assetId = params.get('ruleAssetId') ?? linked?.configuration?.scope.assetId ?? ''
+  const asset = state.assetCatalog?.find(item => item.id === assetId)
+  const assetType = params.get('ruleAssetType') ?? asset?.kind ?? ''
+  const assetVersion = params.get('ruleAssetVersion') ?? linked?.configuration?.scope.assetVersion ?? ''
+  const attributionId = params.get('ruleAttribution') ?? linked?.configuration?.scope.attributionId ?? ''
+  const scope: RuleScope = { assetId, attributionId, ...(assetVersion ? { assetVersion } : {}) }
+  const assetOptions = (state.assetCatalog ?? []).filter(item => !assetType || item.kind === assetType)
+  const versions = (state.assetVersions ?? []).filter(item => item.assetId === assetId).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  const attributions = ruleAttributionsForAsset(state, assetId)
+  const attribution = attributions.find(item => item.id === attributionId)
+  const completeScope = Boolean(type && asset && attribution && (!assetVersion || versions.some(item => item.version === assetVersion)))
+  const stored = type && completeScope ? resolveScopedRule(state, type, scope) : undefined
+  const template = type && completeScope ? createScopedRule(state, type, scope) : undefined
+  const selectedCategory = categories.find(item => item.type === type)
+  const scopeKey = type ? ruleScopeId(type, scope) : ''
+  const [draft, setDraft] = useState<Draft>(emptyDraft)
+  const [feedback, setFeedback] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [legacyClosed, setLegacyClosed] = useState(false)
+  const [legacyEdit, setLegacyEdit] = useState(false)
+  const [legacyValue, setLegacyValue] = useState('')
+  const [legacyError, setLegacyError] = useState('')
+
+  const update = (patch: Record<string, string | undefined>) => {
+    const next = new URLSearchParams(params)
+    next.delete('ruleId')
+    Object.entries(patch).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key))
+    setParams(next, { replace: true })
+    setFeedback('')
+  }
+  useEffect(() => {
+    const value = stored ?? template
+    const next = emptyDraft()
+    const config = value?.configuration
+    if (config?.type === 'GATE') {
+      next.processMin = config.settings.processMin === undefined ? '' : String(config.settings.processMin)
+      next.outcomeMin = config.settings.outcomeMin === undefined ? '' : String(config.settings.outcomeMin)
+      next.generalizationMin = config.settings.generalizationMin === undefined ? '' : String(config.settings.generalizationMin)
+      next.requireHumanReview = config.settings.requireHumanReview
+    } else if (config?.type === 'ROUTING') {
+      next.strategy = config.settings.destinations.includes('STRATEGY')
+      next.agent = config.settings.destinations.includes('AGENT')
+      next.owner = config.settings.owner ?? ''
+    } else if (config?.type === 'CLUSTER') {
+      next.minCases = config.settings.minCases === undefined ? '' : String(config.settings.minCases)
+      next.windowDays = config.settings.windowDays === undefined ? '' : String(config.settings.windowDays)
+    }
+    setDraft(next)
+    setFeedback('')
+  }, [scopeKey, stored?.updatedAt])
+  const change = <K extends keyof Draft>(key: K, value: Draft[K]) => { setDraft(current => ({ ...current, [key]: value })); setFeedback('') }
+
+  let candidate: RuleConfig | undefined
+  if (template && type) {
+    candidate = { ...(stored ?? template), configuration: structuredClone(template.configuration!) }
+    const config = candidate.configuration!
+    if (config.type === 'GATE') {
+      config.settings = { processMin: numberValue(draft.processMin), outcomeMin: numberValue(draft.outcomeMin), generalizationMin: numberValue(draft.generalizationMin), requireHumanReview: draft.requireHumanReview }
+      candidate.status = [draft.processMin, draft.outcomeMin, draft.generalizationMin].some(value => value.trim()) ? 'CONFIGURED' : 'PENDING'
+    } else if (config.type === 'ROUTING') {
+      config.settings = { destinations: [...(draft.strategy ? ['STRATEGY' as const] : []), ...(draft.agent ? ['AGENT' as const] : [])], owner: draft.owner.trim() || undefined }
+      candidate.status = config.settings.destinations.length ? 'CONFIGURED' : 'PENDING'
+    } else {
+      config.settings = { minCases: numberValue(draft.minCases), windowDays: numberValue(draft.windowDays), countingUnit: 'CONFIRMED_CASE', requireHumanConfirmation: true }
+      candidate.status = draft.minCases.trim() ? 'CONFIGURED' : 'PENDING'
+    }
+  }
+  const validationErrors = candidate ? validateScopedRule(state, candidate) : []
+  const clusterAllowed = type !== 'CLUSTER' || Boolean(attribution?.condition.includes('聚类优化'))
+  const blocked = !completeScope || !candidate || validationErrors.length > 0 || !clusterAllowed || saving
+  const save = async () => {
+    if (blocked || !candidate) return
+    setSaving(true)
+    try {
+      await commit({ type: 'UPSERT_SCOPED_RULE', rule: candidate, meta: { actor: '当前用户', reason: '按资产、固定版本及 PRD 归因保存治理规则' } })
+      setFeedback(candidate.status === 'PENDING' ? '已保存，未填写的门槛保持待配置。' : '配置已保存。')
+    } catch (error) { setFeedback('保存失败：' + (error instanceof Error ? error.message : String(error))) }
+    finally { setSaving(false) }
+  }
+  const status = stored?.status ?? template?.status ?? 'PENDING'
+  const legacy = !legacyClosed && linked && !linked.configuration ? linked : undefined
+  const saveLegacy = async () => {
+    if (!legacy || !legacyValue.trim()) return
+    try {
+      const parsed = Number(legacyValue)
+      await commit({ type: 'UPDATE_RULE', ruleId: legacy.id, patch: { status: 'CONFIGURED', value: Number.isFinite(parsed) ? parsed : legacyValue.trim() }, meta: { actor: '当前用户', reason: '编辑历史平台规则' } })
+      setLegacyEdit(false)
+    } catch (error) { setLegacyError('保存失败：' + (error instanceof Error ? error.message : String(error))) }
+  }
+
+  return <div className="space-y-4">
+    <p className="text-xs leading-6 text-muted">选择规则类别，在配置卡片内指定资产、版本和归因。每个范围独立保存，PRD 未明确的门槛保持待配置。</p>
+    <div className="grid gap-4 md:grid-cols-3">
+      {categories.map(item => {
+        const count = state.rules.filter(rule => rule.configuration?.type === item.type && rule.status === 'CONFIGURED').length
+        const Icon = item.icon
+        return <button key={item.type} type="button" aria-label={'配置' + item.title} aria-pressed={type === item.type} onClick={() => update({ ruleType: item.type })} className={'rounded-lg border bg-panel p-5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ' + (type === item.type ? 'border-accent shadow-panel' : 'border-line hover:border-accent/50')}>
+          <Icon className="mb-3 h-5 w-5 text-accent" aria-hidden="true"/>
+          <div className="flex items-center justify-between gap-2"><h2 className="text-base font-semibold text-ink">{item.title}</h2><StatusBadge status={count ? 'CONFIGURED' : 'PENDING'} label={count ? '已有配置' : '待配置'} tone={count ? 'pass' : 'warn'} showIcon={false}/></div>
+          <p className="mt-2 text-xs leading-5 text-muted">{item.description}</p>
+          <p className="mt-4 text-[11px] text-muted">{count ? count + ' 个范围已配置' : '选择资产与归因后配置'}<span className="float-right text-accent">打开配置 →</span></p>
+        </button>
+      })}
+    </div>
+
+    {selectedCategory && <section role="region" aria-label={selectedCategory.title + '配置'} className="rounded-lg border border-line bg-panel p-5 shadow-panel">
+      <SectionHeader title={selectedCategory.title + '配置'} description="此处选择的是规则的适用对象，不受线上时间或环境筛选影响。" actions={<StatusBadge status={status} label={status === 'CONFIGURED' ? (stored ? '已配置' : 'PRD 默认') : '待配置'} tone={status === 'CONFIGURED' ? 'pass' : 'warn'}/>}/>
+      <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Field label="资产类型"><SelectInput aria-label="资产类型" value={assetType} onChange={event => update({ ruleAssetType: event.target.value, ruleAssetId: undefined, ruleAssetVersion: undefined, ruleAttribution: undefined })}><option value="">选择资产类型</option>{Object.entries(ASSET_CATALOG_KIND_LABELS).map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}</SelectInput></Field>
+        <Field label="具体资产"><SelectInput aria-label="具体资产" value={assetId} disabled={!assetType} onChange={event => update({ ruleAssetId: event.target.value, ruleAssetVersion: undefined, ruleAttribution: undefined })}><option value="">{assetType ? '选择具体资产' : '先选择资产类型'}</option>{assetOptions.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</SelectInput></Field>
+        <Field label="资产版本"><SelectInput aria-label="资产版本" value={assetVersion} disabled={!asset} onChange={event => update({ ruleAssetVersion: event.target.value })}><option value="">全部版本（独立配置范围）</option>{versions.map(item => <option key={item.id} value={item.version}>{item.version}</option>)}</SelectInput></Field>
+        <Field label="归因"><SelectInput aria-label="归因" value={attributionId} disabled={!asset} onChange={event => update({ ruleAttribution: event.target.value })}><option value="">{asset ? '选择归因' : '先选择具体资产'}</option>{attributions.map(item => <option key={item.id} value={item.id}>{governanceItemLabel(item)}</option>)}</SelectInput></Field>
+      </div>
+
+      {completeScope ? <div className="mt-5 border-t border-line pt-5">
+        <div className="mb-5 flex flex-wrap gap-2 text-xs"><span className="rounded bg-slate-50 px-3 py-2">{asset?.name}</span><span className="rounded bg-slate-50 px-3 py-2">{assetVersion || '全部版本'}</span><span className="rounded bg-slate-50 px-3 py-2">{governanceItemLabel(attribution)}</span></div>
+        {type === 'GATE' && <>
+          <div className="grid gap-4 md:grid-cols-3">
+            <Field label="过程最终得分下限" hint="0–2；留空为待配置"><TextInput aria-label="过程最终得分下限" type="number" min={0} max={2} step="0.1" value={draft.processMin} placeholder="待配置" onChange={event => change('processMin', event.target.value)}/></Field>
+            <Field label="产物最终得分下限" hint="0–2；采用对应垂类评测标准"><TextInput aria-label="产物最终得分下限" type="number" min={0} max={2} step="0.1" value={draft.outcomeMin} placeholder="待配置" onChange={event => change('outcomeMin', event.target.value)}/></Field>
+            <Field label="泛化最终得分下限" hint="0–2；留空为待配置"><TextInput aria-label="泛化最终得分下限" type="number" min={0} max={2} step="0.1" value={draft.generalizationMin} placeholder="待配置" onChange={event => change('generalizationMin', event.target.value)}/></Field>
+          </div>
+          <label className="mt-5 flex items-center gap-2 text-xs"><input type="checkbox" className="accent-accent" checked={draft.requireHumanReview} onChange={event => change('requireHumanReview', event.target.checked)}/>准出前需人工复核</label>
+        </>}
+        {type === 'ROUTING' && <>
+          <fieldset><legend className="text-xs font-semibold">分流去向（支持多选）</legend><div className="mt-3 grid gap-3 md:grid-cols-2">
+            <label className="flex cursor-pointer gap-3 rounded-lg border border-line p-4"><input type="checkbox" aria-label="策略迭代" className="mt-1 accent-accent" checked={draft.strategy} onChange={event => change('strategy', event.target.checked)}/><span><span className="text-sm font-semibold">策略迭代</span><span className="mt-1 block text-xs text-muted">提交算法团队 Badcase 队列。</span></span></label>
+            <label className="flex cursor-pointer gap-3 rounded-lg border border-line p-4"><input type="checkbox" aria-label="Agent 迭代" className="mt-1 accent-accent" checked={draft.agent} onChange={event => change('agent', event.target.checked)}/><span><span className="text-sm font-semibold">Agent 迭代</span><span className="mt-1 block text-xs text-muted">进入能力修补或聚类进化。</span></span></label>
+          </div></fieldset>
+          {asset?.kind === 'PRODUCTION_SKILL' && <p className="mt-3 text-xs text-muted">生产 Skill 的 Badcase 优先分流给算法团队；同一归因可以同时进入多条处理链。</p>}
+          <Field label="责任人 / 团队" className="mt-4"><TextInput aria-label="责任人 / 团队" value={draft.owner} placeholder="待指定" onChange={event => change('owner', event.target.value)}/></Field>
+        </>}
+        {type === 'CLUSTER' && <>
+          {!clusterAllowed && <p role="status" className="mb-4 rounded-lg bg-warn/10 p-3 text-xs text-warn">{attribution?.condition === '待配置' ? '该归因需求待补充，聚类规则暂不可配置。' : '该归因按 PRD 直接优化，聚类规则不适用。'}</p>}
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="最少相关 Case 数" hint={isTasteClusterScope(state, scope) ? 'PRD 已明确：品味库按同一 Skill 积累 100 条相关数据。' : 'PRD 未明确的触发数保持待配置。'}><TextInput aria-label="最少相关 Case 数" type="number" min={1} step={1} disabled={!clusterAllowed} value={draft.minCases} placeholder="待配置" onChange={event => change('minCases', event.target.value)}/></Field>
+            <Field label="统计窗口（天）" hint="留空表示未配置统计窗口。"><TextInput aria-label="统计窗口（天）" type="number" min={1} step={1} disabled={!clusterAllowed} value={draft.windowDays} placeholder="待配置" onChange={event => change('windowDays', event.target.value)}/></Field>
+          </div>
+          <div className="mt-4 rounded-lg bg-slate-50 p-4 text-xs leading-6 text-muted"><p className="font-semibold text-ink">计数口径</p><p>同一资产、归因和版本范围，按人工确认的相关 Case ID 去重。同一个 Case 的多条 Trace 不重复增加 Case 数。</p><p>品味库以同一 Skill 的相关 Case 为统计基础；选择固定版本时仅覆盖该版本。未配置的门槛不会被推断为已触发。</p></div>
+        </>}
+        {validationErrors.length > 0 && <p role="alert" className="mt-4 text-xs text-fail">{[...new Set(validationErrors.map(error => error.message))].join('；')}</p>}
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4"><p className="text-[11px] text-muted">{stored ? '上次更新 ' + dateText(stored.updatedAt) : '仅预览当前范围；保存后持久化到本地。'}</p><Button variant="primary" onClick={save} disabled={blocked}>{saving ? '正在保存…' : '保存配置'}</Button></div>
+        {feedback && <p role={feedback.startsWith('保存失败') ? 'alert' : 'status'} className={'mt-3 text-xs ' + (feedback.startsWith('保存失败') ? 'text-fail' : 'text-pass')}>{feedback}</p>}
+      </div> : <p className="mt-5 rounded-lg bg-slate-50 p-4 text-xs text-muted">请选择具体资产和归因，展示该范围的配置细项。</p>}
+      <p className="mt-4 text-[10px] text-muted">Mock 本地规则配置。真实分流、聚类与准出执行服务尚未接入；保存不会覆盖历史评测或准出报告。</p>
+    </section>}
+
+    {legacy && <Modal open title="规则详情" onClose={() => { setLegacyClosed(true); update({}) }} footer={<><Button onClick={() => { setLegacyValue(legacy.value === undefined ? '' : String(legacy.value)); setLegacyError(''); setLegacyEdit(true) }}>编辑规则</Button><Button onClick={() => { setLegacyClosed(true); update({}) }}>关闭</Button></>}>
+      <h2 className="text-sm font-semibold">{legacy.name}</h2><EntityId id={legacy.id} kind="rule" onOpen={target => { if (new URLSearchParams(location.search).get('ruleId') !== target.id) navigateContext('/rules', { clear: DETAIL_KEYS, params: { ruleId: target.id } }) }}/>
+      <p className="my-3 text-xs text-muted">历史平台规则。新增规则通过页面卡片按资产与归因单独配置。</p>
+      <KeyValueGrid items={[{ label: '当前值', value: legacy.status === 'PENDING' ? '待配置' : String(legacy.value) }, { label: '状态', value: legacy.status === 'PENDING' ? '待配置' : '已配置' }, { label: '口径说明', value: legacy.description }, { label: '更新时间', value: dateText(legacy.updatedAt) }]}/>
+    </Modal>}
+    <Modal open={legacyEdit} onClose={() => setLegacyEdit(false)} title="编辑规则" footer={<Button variant="primary" onClick={saveLegacy} disabled={!legacyValue.trim()}>保存规则</Button>}><Field label="规则值"><TextInput aria-label="规则值" value={legacyValue} onChange={event => setLegacyValue(event.target.value)}/></Field>{legacyError && <p role="alert" className="mt-3 text-xs text-fail">{legacyError}</p>}</Modal>
   </div>
 }

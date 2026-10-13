@@ -1,33 +1,38 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { QualityProvider, useQuality } from '../../store'
 import { EvolutionProvider } from '../store'
 import { ExperimentsGatesPage, ReleasesPage, RuleConfigurationPage } from './index'
 
-function FullHistoryScope() {
-  const { dispatch } = useQuality()
+function FullHistoryScope({ children }: { children: ReactNode }) {
+  const { state, dispatch } = useQuality()
   useEffect(() => { dispatch({ type: 'SET_FILTERS', filters: { timeRange: '30d' } }) }, [dispatch])
-  return null
+  return state.filters.timeRange === '30d' ? children : null
 }
-const renderPage = (page: React.ReactNode) => render(<MemoryRouter><QualityProvider><FullHistoryScope /><EvolutionProvider>{page}</EvolutionProvider></QualityProvider></MemoryRouter>)
+const renderPage = (page: React.ReactNode) => render(<MemoryRouter><QualityProvider><FullHistoryScope><EvolutionProvider>{page}</EvolutionProvider></FullHistoryScope></QualityProvider></MemoryRouter>)
 
 describe('experiment configuration, execution, reports, and release details', () => {
   beforeEach(() => localStorage.clear())
-  it('shows monitoring baseline rules as pending instead of invented values', () => {
+  it('shows only three asset-scoped configuration entries and keeps unspecified gates pending', () => {
     renderPage(<RuleConfigurationPage />)
-    expect(screen.getByText('总耗时 Baseline')).toBeVisible()
-    expect(screen.getByText('TTFT Baseline')).toBeVisible()
-    expect(screen.getByText('成本 Baseline')).toBeVisible()
-    expect(screen.getAllByText('待配置').length).toBeGreaterThanOrEqual(3)
+    for (const title of ['配置指标准出门禁', '配置分流规则', '配置聚类规则']) expect(screen.getByRole('button', { name: title })).toBeVisible()
+    expect(screen.queryByText('总耗时 Baseline')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '配置指标准出门禁' }))
+    fireEvent.change(screen.getByLabelText('资产类型'), { target: { value: 'PRODUCTION_SKILL' } })
+    fireEvent.change(screen.getByLabelText('具体资产'), { target: { value: 'asset-catalog-skill-ppt-builder' } })
+    fireEvent.change(screen.getByLabelText('归因'), { target: { value: 'skill-sop' } })
+    expect(screen.getByLabelText('过程最终得分下限')).toHaveValue(null)
+    expect(screen.getByLabelText('产物最终得分下限')).toHaveValue(null)
   })
 
-  it('uses a newly configured repeat rule as the next Experiment default', () => {
+  it('uses a newly configured repeat rule as the next Experiment default', async () => {
     renderPage(<><RuleConfigurationPage initialRuleId="rule-repeat-count" /><ExperimentsGatesPage /></>)
     fireEvent.click(screen.getByRole('button', { name: '编辑规则' }))
     fireEvent.change(screen.getByLabelText('规则值'), { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: '保存规则' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑规则' })).not.toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: '创建实验' }))
     expect(screen.getByRole('dialog', { name: '创建实验' })).toHaveTextContent('规则默认 5 次 / Case')
     expect(screen.getByLabelText('重复次数')).toHaveValue(5)

@@ -3,6 +3,7 @@ import { createInitialEvolutionData } from './data'
 import type { Asset, Attribution, Dataset, EvaluationRevision, Experiment, ExperimentRun, GateDecision, Issue, IssueCluster, ReleaseVersion, Variant } from './domain'
 import { evolutionReducer } from './store'
 import { validateEvolutionState } from './data/validation'
+import { resolveIdentity } from './identity'
 
 const meta = { actor: '治理测试员', reason: '测试变更', at: '2026-09-28T12:00:00.000Z', auditId: 'audit-test' }
 
@@ -30,7 +31,9 @@ describe('evolution reducer', () => {
 
     const materialized = completed.tracePackages.filter((item) => item.batchId === batch.id)
     expect(materialized).toHaveLength(1)
-    expect(materialized[0].traceId).toBe(traceId)
+    expect(materialized[0].traceId).toBe(resolveIdentity(state, 'trace', traceId))
+    expect(completed.evaluationBatches.find((item) => item.id === batch.id)?.traceIds).toEqual([resolveIdentity(state, 'trace', traceId)])
+    expect(completed.evaluationJobs.find((item) => item.id === job.id)?.traceIds).toEqual([resolveIdentity(state, 'trace', traceId)])
     expect(materialized[0].id).not.toBe(`package-${traceId}`)
     expect(materialized[0].moduleScores.length).toBeGreaterThan(0)
     expect(completed.evaluationFindings.some((item) => item.packageId === materialized[0].id)).toBe(true)
@@ -67,7 +70,7 @@ describe('evolution reducer', () => {
 
   it('does not synthesize PASS when a completed batch has no same-Trace evaluation template', () => {
     const original = createInitialEvolutionData()
-    const state = { ...original, tracePackages: original.tracePackages.filter((item) => item.traceId !== 'trace-ppt-generate') }
+    const state = { ...original, tracePackages: original.tracePackages.filter((item) => item.traceId !== resolveIdentity(original, 'trace', 'trace-ppt-generate')) }
     const at = '2026-09-30T12:40:00.000Z'
     const batch = {
       id: 'batch-test-unknown', name: '无模板批次', status: 'DRAFT' as const, traceIds: ['trace-ppt-generate'], packageIds: [], jobIds: [],
@@ -140,10 +143,10 @@ describe('evolution reducer', () => {
 
   it('keeps automatic module evidence and source IDs immutable during human override', () => {
     const state = createInitialEvolutionData()
-    const pkg = state.tracePackages.find((item) => item.traceId === 'trace-ppt-generate')!
+    const pkg = state.tracePackages.find((item) => item.traceId === resolveIdentity(state, 'trace', 'trace-ppt-generate'))!
     const before = pkg.moduleScores.find((item) => item.moduleCode === 'SKILL')!
     const meta = { actor: '测试员', reason: '人工复核', at: '2026-09-30T12:00:00.000Z' }
-    const next = evolutionReducer(state, { type: 'UPDATE_MODULE_EVALUATION', packageId: pkg.id, scoreId: before.id, patch: { automaticStatus: 'PASS', judgeReason: '被篡改', evidence: { ...before.evidence, rootEvidenceIds: [] }, humanStatus: 'PASS', humanNote: '人工接受', humanUpdatedBy: '测试员' }, meta })
+    const next = evolutionReducer(state, { type: 'UPDATE_MODULE_EVALUATION', packageId: pkg.id, scoreId: before.id, patch: { automaticStatus: 'PASS', judgeReason: '被篡改', evidence: { ...before.evidence, rootEvidenceIds: [] }, humanStatus: 'PASS', humanScore: 2, humanNote: '人工接受', humanUpdatedBy: '测试员' }, meta })
     const after = next.tracePackages.find((item) => item.id === pkg.id)!.moduleScores.find((item) => item.id === before.id)!
     expect(after.automaticStatus).toBe(before.automaticStatus)
     expect(after.judgeReason).toBe(before.judgeReason)
@@ -193,7 +196,7 @@ describe('evolution reducer', () => {
   it('upserts attribution and issue records without losing multi-route labels', () => {
     const state = createInitialEvolutionData()
     const attribution: Attribution = {
-      id: 'attribution-new', caseId: 'case-tool-export', traceId: 'trace-tool-export', observationId: 'obs-tool-call', module: 'Act', dimension: '工具执行失败', evidenceIds: ['evidence-tool-error'], confidence: 1, source: 'HUMAN', confirmed: true, routingLabels: ['策略迭代', 'Agent 迭代'], optimizationMode: 'DIRECT_FIX', status: 'CONFIRMED', revisions: [], createdAt: meta.at!, updatedAt: meta.at!
+      id: 'attribution-new', caseId: 'case-tool-export', traceId: resolveIdentity(state, 'trace', 'trace-tool-export'), observationId: 'obs-tool-call', module: 'Act', dimension: '工具执行失败', evidenceIds: ['evidence-tool-error'], confidence: 1, source: 'HUMAN', confirmed: true, routingLabels: ['策略迭代', 'Agent 迭代'], optimizationMode: 'DIRECT_FIX', status: 'CONFIRMED', revisions: [], createdAt: meta.at!, updatedAt: meta.at!
     }
     const issue: Issue = {
       id: 'issue-new', caseId: 'case-tool-export', attributionId: attribution.id, title: '导出工具参数校验', description: '参数未在执行前校验。', module: 'Act', dimension: '工具执行失败', evidenceIds: ['evidence-tool-error'], routingLabels: [...attribution.routingLabels], optimizationMode: 'DIRECT_FIX', responsibilityStatus: 'ASSIGNED', owner: 'Tool 团队', status: 'CONFIRMED', clusterIds: [], variantIds: [], createdAt: meta.at, updatedAt: meta.at

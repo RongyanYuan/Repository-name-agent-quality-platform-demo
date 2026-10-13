@@ -1,8 +1,12 @@
 import { FileSearch, Link2, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { DetailDrawer, EntityId, IdLink, KeyValueGrid, type ReferenceTarget } from './ViewPrimitives'
-import { Button, Field, SelectInput, SectionHeader, StatusBadge, TextArea, TextInput } from '../../ui'
-import { formatLegacyScoreOutOfTwo, formatNormalizedScoreOutOfTwo } from '../score'
+import { Button, SectionHeader, StatusBadge } from '../../ui'
+import { formatNormalizedScoreOutOfTwo } from '../score'
+import { ModuleReviewEditor } from './ModuleReviewEditor'
+import type { ModuleEvaluationScore } from '../domain'
+import { formatAutomaticModuleScore } from '../reviews'
+import type { ModuleReviewInput } from '../reviews'
 
 type LooseRecord = Record<string, unknown>
 
@@ -21,7 +25,20 @@ const first = (item: LooseRecord, keys: string[], fallback?: unknown) => {
   return fallback
 }
 
-export function EvidenceBundleDrawer({ open, onClose, module, evidence = [], onNavigateReference, onSaveOverride }: { open: boolean; onClose: () => void; module?: LooseRecord; evidence?: LooseRecord[]; onNavigateReference?: (target: ReferenceTarget) => void; onSaveOverride?: (patch: LooseRecord) => void }) {
+interface EvidenceBundleProps { module?: LooseRecord; evidence?: LooseRecord[]; onNavigateReference?: (target: ReferenceTarget) => void }
+export function EvidenceBundleDrawer({ open, onClose, module, evidence = [], onNavigateReference, onSaveOverride, onSaveReview, onReview, reviewOpen = false }: EvidenceBundleProps & { open: boolean; onClose: () => void; onSaveOverride?: (patch: LooseRecord) => void; onSaveReview?: (input: ModuleReviewInput) => Promise<void>; onReview?: () => void; reviewOpen?: boolean }) {
+  const [editing, setEditing] = useState(false)
+  useEffect(() => { setEditing(reviewOpen) }, [module, reviewOpen])
+  const contextOnly = /context|上文/i.test(String(module?.moduleCode ?? module?.module ?? module?.moduleLabel ?? ''))
+  return <DetailDrawer open={open} onClose={onClose} title={`${text(first(module ?? {}, ['moduleLabel', 'module', 'moduleCode']), '模块')} Evidence`} description="自动评测、Rubric 与根证据保持不可变关联；Context Assembly 仅作为证据，不单独计入模块指标。">
+    <EvidenceBundleContent module={module} evidence={evidence} onNavigateReference={onNavigateReference} />
+    {!contextOnly && (onReview || onSaveReview || onSaveOverride) && <div className="mt-4"><Button onClick={() => onReview ? onReview() : setEditing(true)}>{module?.humanStatus ? '修改复核' : '人工复核'}</Button></div>}
+    {!contextOnly && !onReview && !onSaveReview && !onSaveOverride && <p className="mt-4 text-xs text-muted">只读证据入口；人工评分请在当前 Trace 的评测区复核。</p>}
+    {editing && (onSaveReview || onSaveOverride) && module && <div className="mt-4"><ModuleReviewEditor key={String(module.id)} module={module as unknown as ModuleEvaluationScore} onClose={() => setEditing(false)} onSubmit={async (input) => { if (onSaveReview) await onSaveReview(input); else await onSaveOverride?.({ humanStatus: input.auxiliaryVerdict, humanScore: input.humanScore, humanNote: input.reason, humanUpdatedBy: input.reviewer, humanUpdatedAt: input.reviewedAt }); setEditing(false) }} /></div>}
+  </DetailDrawer>
+}
+
+export function EvidenceBundleContent({ module, evidence = [], onNavigateReference }: EvidenceBundleProps) {
   const stored = module ?? {}
   const bundle = stored.evidence && typeof stored.evidence === 'object' ? stored.evidence as LooseRecord : {}
   const item: LooseRecord = { ...stored, autoStatus: stored.autoStatus ?? stored.automaticStatus,
@@ -32,17 +49,12 @@ export function EvidenceBundleDrawer({ open, onClose, module, evidence = [], onN
     firstFailureNode: stored.firstFailureNode ?? (bundle.firstFailure ? list(bundle.observationIds)[0] : undefined),
     derivedFromModule: stored.derivedFromModule ?? bundle.derivedFromModule,
     artifactId: stored.artifactId ?? list(bundle.artifactIds)[0] }
-  const [overrideStatus, setOverrideStatus] = useState(text(first(item, ['humanStatus', 'humanVerdict', 'manualStatus']), 'UNKNOWN'))
-  const [overrideScore, setOverrideScore] = useState(first(item, ['humanScore', 'score']) === undefined ? '' : String(first(item, ['humanScore', 'score'])))
-  const [overrideNote, setOverrideNote] = useState(text(first(item, ['humanNote']), ''))
-  useEffect(() => {
-    setOverrideStatus(text(first(item, ['humanStatus', 'humanVerdict', 'manualStatus']), 'UNKNOWN'))
-    setOverrideScore(first(item, ['humanScore', 'score']) === undefined ? '' : String(first(item, ['humanScore', 'score'])))
-    setOverrideNote(text(first(item, ['humanNote']), ''))
-  }, [module])
   const status = text(first(item, ['humanStatus', 'humanVerdict', 'manualStatus', 'status', 'autoStatus', 'verdict']), 'UNKNOWN')
+  const contextOnly = /context|上文/i.test(String(first(item, ['moduleCode', 'module', 'moduleLabel'], '')))
+  const autoScore = first(item, ['autoScore', 'score'])
+  const formattedAuto = formatAutomaticModuleScore({ score: typeof autoScore === 'number' ? autoScore : undefined, scoreScale: item.scoreScale === '0-2' ? '0-2' : '0-1' }, '未评分')
   const evidenceIds = [...new Set([...list(first(item, ['evidenceIds', 'rootEvidenceIds', 'evidenceBundleIds'], [])), ...list(first(item, ['rootEvidenceId', 'evidenceId'], []))])]
-  const rootEvidence = evidence.filter((entry) => evidenceIds.includes(text(entry.id, '')) || Boolean(first(entry, ['isRoot', 'root'], false)))
+  const rootEvidence = evidence.filter((entry) => evidenceIds.includes(text(entry.id, '')))
   const rubric = first(item, ['rubricRule', 'rubric', 'rubricText', 'rule'])
   const observationId = text(first(item, ['observationId', 'observation', 'observationIdRef']), '')
   const logId = text(first(item, ['logId', 'log', 'logIdRef']), '')
@@ -50,20 +62,19 @@ export function EvidenceBundleDrawer({ open, onClose, module, evidence = [], onN
   const derivedFrom = text(first(item, ['derivedFrom', 'derivedFailureFrom', 'derivedFromModule']), '')
   const openRef = (kind: ReferenceTarget['kind'], id: string) => { if (id) onNavigateReference?.({ kind, id }) }
   return (
-    <DetailDrawer open={open} onClose={onClose} title={`${text(first(item, ['moduleLabel', 'module', 'moduleCode']), '模块')} Evidence`} description="自动评测、Rubric 与根证据保持不可变关联；Context Assembly 仅作为证据，不单独计入模块指标。">
       <div className="space-y-5">
         <section className="rounded-lg border border-line bg-slate-50/60 p-4">
-          <SectionHeader title="评测评分（0–2）" actions={<span className="font-mono text-sm font-semibold text-accent">{item.humanScore !== undefined || item.human_score !== undefined ? formatNormalizedScoreOutOfTwo(first(item, ['humanScore', 'human_score']), '未评分') : formatLegacyScoreOutOfTwo(first(item, ['score', 'autoScore']), '未评分')}</span>} />
+          <SectionHeader title={contextOnly ? '上文证据说明' : '评测评分（0–2）'} actions={!contextOnly ? <span className="font-mono text-sm font-semibold text-accent">{item.humanScore !== undefined || item.human_score !== undefined ? formatNormalizedScoreOutOfTwo(first(item, ['humanScore', 'human_score']), '未评分') : formattedAuto}</span> : undefined} />
           <KeyValueGrid className="mt-3" items={[
             { label: '模块', value: text(first(item, ['moduleLabel', 'module', 'moduleCode'])) },
-            { label: '自动评分（0–2）', value: formatLegacyScoreOutOfTwo(first(item, ['score', 'autoScore']), '未评分') },
-            { label: '人工评分（0–2）', value: item.humanScore !== undefined || item.human_score !== undefined ? formatNormalizedScoreOutOfTwo(first(item, ['humanScore', 'human_score']), '未评分') : '未复核' },
+            { label: '自动评分（0–2）', value: contextOnly ? '仅作为证据，不单独评分' : formattedAuto },
+            { label: '人工评分（0–2）', value: contextOnly ? '不开放独立评分' : item.humanScore !== undefined || item.human_score !== undefined ? formatNormalizedScoreOutOfTwo(first(item, ['humanScore', 'human_score']), '未评分') : '未复核' },
             { label: '辅助判定', value: `${text(first(item, ['autoStatus', 'autoVerdict', 'verdict', 'status']), 'UNKNOWN')} / ${item.humanStatus || item.humanVerdict || item.manualStatus ? status : '未复核'}` },
             { label: 'Eval Agent Version', value: text(first(item, ['evalAgentVersion', 'judgeVersion', 'evalVersion']), '待记录') },
             { label: 'Rubric Version', value: text(first(item, ['rubricVersion', 'rubricVer']), '待记录') }
           ]} />
           <div className="mt-4 rounded-md border border-line bg-white p-3"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted">LLM Judge Reason</p><p className="mt-1 text-xs leading-5 text-ink">{text(first(item, ['judgeReason', 'reason', 'autoReason']), '判定依据未记录')}</p></div>
-          {onSaveOverride && Boolean(item.id) && <div className="mt-4 rounded-md border border-accent/20 bg-accent/5 p-3"><p className="text-[10px] font-semibold uppercase tracking-wide text-accent">人工 Override</p><div className="mt-3 grid gap-3 sm:grid-cols-2"><Field label="人工状态"><SelectInput aria-label="人工状态" value={overrideStatus} onChange={(event) => setOverrideStatus(event.target.value)}><option>PASS</option><option>FAIL</option><option>DERIVED_FAIL</option><option>UNKNOWN</option><option>N/A</option></SelectInput></Field><Field label="人工评分（0–2）"><TextInput aria-label="人工评分（0–2）" type="number" min="0" max="2" step="0.01" value={overrideScore} onChange={(event) => setOverrideScore(event.target.value)} /></Field><Field label="人工备注" className="sm:col-span-2"><TextArea aria-label="人工备注" value={overrideNote} onChange={(event) => setOverrideNote(event.target.value)} placeholder="说明为何覆盖自动结论" /></Field></div><div className="mt-3 flex justify-end"><Button variant="primary" onClick={() => onSaveOverride({ humanStatus: overrideStatus, humanScore: overrideScore.trim() === '' ? undefined : Number(overrideScore), humanNote: overrideNote.trim() || undefined, humanUpdatedBy: '当前用户', humanUpdatedAt: new Date().toISOString() })}>保存人工 Override</Button></div></div>}
+          {Boolean(item.humanStatus ?? item.humanVerdict) && <div className="mt-3 rounded-md border border-accent/20 bg-white p-3"><p className="text-[10px] font-semibold text-accent">人工说明</p><p className="mt-1 text-xs leading-5">{text(item.humanNote, '未记录')}</p><p className="mt-2 text-[11px] text-muted">{text(item.humanUpdatedBy, '人员未记录')} · {text(item.humanUpdatedAt, '时间未记录')}</p></div>}
         </section>
 
         <section>
@@ -97,6 +108,5 @@ export function EvidenceBundleDrawer({ open, onClose, module, evidence = [], onN
           <div className="mt-3 flex flex-wrap gap-3">{text(first(item, ['traceId', 'trace'])) !== '—' && <IdLink id={text(first(item, ['traceId', 'trace']))} kind="trace" onOpen={onNavigateReference} />}{text(first(item, ['caseId', 'case'])) !== '—' && <IdLink id={text(first(item, ['caseId', 'case']))} kind="case" onOpen={onNavigateReference} />}{text(first(item, ['artifactId', 'artifact'])) !== '—' && <IdLink id={text(first(item, ['artifactId', 'artifact']))} kind="artifact" onOpen={onNavigateReference} />}</div>
         </section>
       </div>
-    </DetailDrawer>
   )
 }

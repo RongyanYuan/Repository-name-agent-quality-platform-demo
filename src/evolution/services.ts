@@ -1,4 +1,8 @@
 import type { Evidence, EvaluationBatch, EvaluationJob, EvolutionState, Experiment, EvaluationFinding, ObservationLog, OutcomeEval, ProcessEval, ReleaseVersion, RoutingDelivery, Trace, TraceEvaluationPackage } from './domain'
+import { resolveIdentity } from './identity'
+import { createLocalDatasetExecutionAdapter, type DatasetExecutionServicePort } from './datasetExecutionServices'
+export { createLocalDatasetExecutionAdapter, executeDatasetRun } from './datasetExecutionServices'
+export type { DatasetExecutionServicePort, DatasetRunExecutionOptions } from './datasetExecutionServices'
 
 export type ServiceProviderKind = 'LOCAL_MOCK' | 'EXTERNAL'
 export interface ServiceResult<T> { provider: ServiceProviderKind; isMock: boolean; label: string; data: T }
@@ -29,6 +33,7 @@ export interface EvolutionServiceAdapters {
   release: ReleaseServicePort
   evaluationBatches?: EvaluationBatchServicePort
   routing?: RoutingServicePort
+  datasetExecution?: DatasetExecutionServicePort
 }
 
 const mockResult = <T>(label: string, data: T): ServiceResult<T> => ({ provider: 'LOCAL_MOCK', isMock: true, label, data })
@@ -41,7 +46,7 @@ const requireRecord = <T extends { id: string }>(records: T[], id: string, kind:
 
 export function createLocalTraceAdapter(getState: () => EvolutionState): TraceServicePort {
   return { async getTrace(traceId) {
-    const state = getState(); const trace = requireRecord(state.traces, traceId, 'Trace')
+    const state = getState(); const trace = requireRecord(state.traces, resolveIdentity(state, 'trace', traceId), 'Trace')
     const observations = trace.observationIds.map((id) => requireRecord(state.observations, id, 'Observation'))
     const evidenceIds = new Set(observations.flatMap((item) => item.evidenceIds))
     return mockResult('本地 Mock Trace / Langfuse 适配器', clone({ trace, observations, evidence: state.evidence.filter((item) => evidenceIds.has(item.id)) }))
@@ -82,7 +87,8 @@ export function createLocalEvaluationBatchAdapter(getState: () => EvolutionState
     async listTracePackages(batchId) { return mockResult('本地 Mock Trace Evaluation Ledger Repository', clone(getState().tracePackages.filter((item) => !batchId || item.batchId === batchId))) },
     async createEvaluationJob(batchId, traceIds) {
       const state = getState(); const batch = requireRecord(state.evaluationBatches, batchId, 'EvaluationBatch')
-      const job: EvaluationJob = { id: idFactory(), batchId, attempt: Math.max(0, ...state.evaluationJobs.filter((item) => item.batchId === batchId).map((item) => item.attempt)) + 1, status: 'QUEUED', traceIds: traceIds?.length ? traceIds : [...batch.traceIds], processedTraceIds: [], failedTraceIds: [], evalAgentVersion: batch.evalAgentVersion, rubricVersion: batch.rubricVersion, runEnvironment: batch.runEnvironment, configurationSnapshot: { source: 'local-mock-repository' }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+      const canonicalTraceIds = (traceIds?.length ? traceIds : batch.traceIds).map(id => requireRecord(state.traces, resolveIdentity(state, 'trace', id), 'Trace').id)
+      const job: EvaluationJob = { id: idFactory(), batchId, attempt: Math.max(0, ...state.evaluationJobs.filter((item) => item.batchId === batchId).map((item) => item.attempt)) + 1, status: 'QUEUED', traceIds: canonicalTraceIds, processedTraceIds: [], failedTraceIds: [], evalAgentVersion: batch.evalAgentVersion, rubricVersion: batch.rubricVersion, runEnvironment: batch.runEnvironment, configurationSnapshot: { source: 'local-mock-repository' }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
       return mockResult('本地 Mock Evaluation Job Repository', clone(job))
     }
   }
@@ -90,8 +96,8 @@ export function createLocalEvaluationBatchAdapter(getState: () => EvolutionState
 
 export function createLocalRoutingAdapter(getState: () => EvolutionState): RoutingServicePort {
   return {
-    async listFindings(traceId) { return mockResult('本地 Mock Evaluation Finding Repository', clone(getState().evaluationFindings.filter((item) => !traceId || item.traceId === traceId))) },
-    async listDeliveries(traceId) { return mockResult('本地 Mock Routing Delivery Repository', clone(getState().routingDeliveries.filter((item) => !traceId || item.traceId === traceId))) }
+    async listFindings(traceId) { const state = getState(); const canonical = traceId ? resolveIdentity(state, 'trace', traceId) : undefined; return mockResult('本地 Mock Evaluation Finding Repository', clone(state.evaluationFindings.filter((item) => !canonical || item.traceId === canonical))) },
+    async listDeliveries(traceId) { const state = getState(); const canonical = traceId ? resolveIdentity(state, 'trace', traceId) : undefined; return mockResult('本地 Mock Routing Delivery Repository', clone(state.routingDeliveries.filter((item) => !canonical || item.traceId === canonical))) }
   }
 }
 
@@ -103,6 +109,7 @@ export function createLocalEvolutionServices(getState: () => EvolutionState, rep
     generationPlanning: replacements.generationPlanning ?? createLocalGenerationPlanningAdapter(getState),
     release: replacements.release ?? createLocalReleaseAdapter(getState),
     evaluationBatches: replacements.evaluationBatches ?? createLocalEvaluationBatchAdapter(getState),
-    routing: replacements.routing ?? createLocalRoutingAdapter(getState)
+    routing: replacements.routing ?? createLocalRoutingAdapter(getState),
+    datasetExecution: replacements.datasetExecution ?? createLocalDatasetExecutionAdapter(getState)
   }
 }

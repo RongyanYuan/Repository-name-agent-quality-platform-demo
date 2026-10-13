@@ -1,16 +1,27 @@
 import type { Case, Dataset, EvolutionState, Trace, TraceEvaluationPackage, TraceRating, VerticalScenario } from '../domain'
 import { evolutionItemId } from '../taxonomy'
 import { currentGateDecision, governanceTracks, targetAttributionId, targetMatchesScope, type GovernanceScope } from './skillWorkspace'
+import { appendGovernanceEvents, selectTraceGovernance, type TraceGovernanceHistory } from './traceGovernance'
+import { resolveIdentity } from '../identity'
 
 export interface TraceWorkbenchRow {
   trace: Trace; case: Case; package?: TraceEvaluationPackage; artifact?: EvolutionState['artifacts'][number]
   labels: string[]; datasets: Dataset[]; rating?: TraceRating; tokens: number; latency: number
   processStatus: string; outcomeStatus: string
+  governance: TraceGovernanceHistory
 }
 
 const sourceLabel = (record: Case) => record.sourceType === 'ONLINE_WINDOW' ? '线上' : record.sourceType === 'GOLDEN_DATASET' ? '黄金集' : 'mock集'
 const datasetLabel = (dataset: Dataset) => dataset.type === 'REGRESSION' ? '回归数据集A' : dataset.type === 'GENERALIZATION' ? '泛化数据集A' : dataset.type === 'WINDOW_ONLINE' ? '线上时间窗口' : dataset.purpose ?? dataset.name
 const clamp2 = (value: number) => Math.max(0, Math.min(2, Number(value.toFixed(2))))
+
+function datasetIncludesTrace(state: EvolutionState, dataset: Dataset, trace: Trace): boolean {
+  if (!dataset.caseIds.includes(trace.caseId)) return false
+  const memberships = (state.datasetMemberships ?? []).filter(member => member.datasetId === dataset.id && member.datasetVersion === dataset.version && member.caseId === trace.caseId)
+  // Legacy datasets retain Case-shared scope. Explicit enrollment narrows
+  // samples to recorded Trace IDs instead of enrolling sibling requests.
+  return !memberships.length || memberships.some(member => member.scope === 'CASE_SHARED' || member.traceIds.some(id => resolveIdentity(state, 'trace', id) === trace.id))
+}
 
 function buildRating(pkg?: TraceEvaluationPackage): TraceRating | undefined {
   if (!pkg) return undefined
@@ -20,19 +31,17 @@ function buildRating(pkg?: TraceEvaluationPackage): TraceRating | undefined {
   if (!process.length && !outcome.length) return undefined
   return {
     scale: '0-2', rubric: pkg.skillCategory === 'TASTE_SKILL' ? '对应垂类品味评测标准' : '对应过程模块评测标准',
-    processFinal: process.length ? clamp2(process.reduce((sum, score) => sum + (score.score ?? 0) * 2, 0) / process.length) : undefined,
-    outcomeFinal: outcome.length ? clamp2(outcome.reduce((sum, score) => sum + (score.score ?? 0) * 2, 0) / outcome.length) : undefined,
-    processDimensions: process.map(score => ({ module: score.moduleCode, dimension: score.moduleLabel, score: score.score === undefined ? undefined : clamp2(score.score * 2), scoreId: score.id })),
-    outcomeDimensions: outcome.map(score => ({ dimension: score.moduleLabel, score: score.score === undefined ? undefined : clamp2(score.score * 2), evaluationId: score.id }))
+    processDimensions: process.map(score => ({ module: score.moduleCode, dimension: score.moduleLabel, score: score.score === undefined ? undefined : clamp2(score.score * (score.scoreScale === '0-2' ? 1 : 2)), scoreId: score.id })),
+    outcomeDimensions: outcome.map(score => ({ dimension: score.moduleLabel, score: score.score === undefined ? undefined : clamp2(score.score * (score.scoreScale === '0-2' ? 1 : 2)), evaluationId: score.id }))
   }
 }
 
 export function traceRows(state: EvolutionState): TraceWorkbenchRow[] {
   return state.traces.map(trace => {
     const record = state.cases.find(item => item.id === trace.caseId)!
-    const pkg = state.tracePackages.find(item => item.traceId === trace.id && item.status !== 'PENDING') ?? state.tracePackages.find(item => item.traceId === trace.id)
-    const datasets = state.datasets.filter(dataset => dataset.caseIds.includes(record.id))
-    return { trace, case: record, package: pkg, artifact: state.artifacts.find(item => trace.artifactIds.includes(item.id)), labels: [...new Set([sourceLabel(record), ...datasets.map(datasetLabel)])], datasets, rating: buildRating(pkg), tokens: trace.inputTokens + trace.outputTokens, latency: trace.totalLatencyMs, processStatus: pkg?.processCoverage === 'COMPLETE' ? '已评测' : pkg?.processCoverage === 'PARTIAL' ? '评测中' : '待评测', outcomeStatus: pkg?.outcomeCoverage === 'COMPLETE' ? '已评测' : pkg?.outcomeCoverage === 'PARTIAL' ? '评测中' : '待评测' }
+    const pkg = state.tracePackages.filter(item => item.traceId === trace.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))[0]
+    const datasets = state.datasets.filter(dataset => datasetIncludesTrace(state, dataset, trace))
+    return { trace, case: record, package: pkg, artifact: state.artifacts.find(item => trace.artifactIds.includes(item.id)), labels: [...new Set([sourceLabel(record), ...datasets.map(datasetLabel)])], datasets, rating: buildRating(pkg), tokens: trace.inputTokens + trace.outputTokens, latency: trace.totalLatencyMs, processStatus: pkg?.processCoverage === 'COMPLETE' ? '已评测' : pkg?.processCoverage === 'PARTIAL' ? '评测中' : '待评测', outcomeStatus: pkg?.outcomeCoverage === 'COMPLETE' ? '已评测' : pkg?.outcomeCoverage === 'PARTIAL' ? '评测中' : '待评测', governance: selectTraceGovernance(state, trace.id) }
   })
 }
 
@@ -62,29 +71,44 @@ export function datasetRows(state: EvolutionState, filter: GovernanceScope = {})
       : ['DRAFT', 'QUEUED'].includes(latestExperiment.status) ? '待运行'
       : latestExperiment.status === 'FAILED' ? '评测失败'
       : hasResult ? '已有评测结果' : '暂无评测结果'
-    return { dataset, targets, experimentType: experiments.some(experiment => experiment.level === 'WINDOW_COMBINATION') ? '窗口版本实验' : '单能力变体实验', evaluationResult, gate: latestExperiment ? gate : dataset.gateStatus ?? gate, traceIds: state.traces.filter(trace => dataset.caseIds.includes(trace.caseId)).map(trace => trace.id), experimentIds: experiments.map(experiment => experiment.id), decisionIds: decisions.map(decision => decision.id) }
+    return { dataset, targets, experimentType: experiments.some(experiment => experiment.level === 'WINDOW_COMBINATION') ? '窗口版本实验' : '单能力变体实验', evaluationResult, gate: latestExperiment ? gate : dataset.gateStatus ?? gate, traceIds: state.traces.filter(trace => datasetIncludesTrace(state, dataset, trace)).map(trace => trace.id), experimentIds: experiments.map(experiment => experiment.id), decisionIds: decisions.map(decision => decision.id) }
   })
 }
 
 export function datasetTraceRows(state: EvolutionState, dataset: Dataset): TraceWorkbenchRow[] {
-  const members = new Set(dataset.caseIds)
-  return traceRows(state).filter(row => members.has(row.case.id))
+  return traceRows(state).filter(row => datasetIncludesTrace(state, dataset, row.trace))
 }
 
 export function importTraceCases(state: EvolutionState, traceIds: string[], kind: 'evaluation' | 'golden', name: string, at: string) {
   const next = structuredClone(state); const blocked: Array<{ caseId: string; reason: string }> = []; const addedCaseIds: string[] = []
-  const target = next.datasets.find(dataset => kind === 'golden' ? dataset.purpose === '黄金集' : dataset.purpose === '原始归因集')
+  const matchingTargets = next.datasets.filter(dataset => kind === 'golden' ? dataset.purpose === '黄金集' : dataset.purpose === '原始归因集')
+  const target = matchingTargets.find(dataset => !dataset.frozen) ?? (kind === 'golden' ? undefined : matchingTargets[0])
   const dataset: Dataset = target ?? { id: kind === 'golden' ? 'dataset-golden-set' : 'dataset-evaluation-import', name, type: 'ATTRIBUTION', version: 'v1', caseIds: [], sampleCount: 0, source: '用户批量导入', scope: name, frozen: false, population: { totalSampleCount: 0, localCaseCount: 0, externalSampleCount: 0, sourceSystem: '本地 Mock', countingRule: '按 Case ID 去重' }, purpose: kind === 'golden' ? '黄金集' : '原始归因集', setRole: kind === 'golden' ? 'GOLDEN' : 'EVALUATION', targets: [], createdAt: at, updatedAt: at }
-  if (!target) next.datasets.push(dataset)
-  for (const traceId of [...new Set(traceIds)]) {
-    const row = traceRows(next).find(item => item.trace.id === traceId)
-    if (!row) continue
-    if (kind === 'golden' && (row.case.sourceType !== 'ONLINE_WINDOW' || row.package?.status !== 'EVALUATED')) { blocked.push({ caseId: row.case.id, reason: '只有已评测的线上 Case 可以加入黄金集。' }); continue }
-    const existing = next.datasets.filter(item => item.caseIds.includes(row.case.id))
-    if (existing.length) { blocked.push({ caseId: row.case.id, reason: `已属于${existing.map(item => item.name).join('、')}，不能重复加入。` }); continue }
-    dataset.caseIds.push(row.case.id); addedCaseIds.push(row.case.id)
+  const rows = traceRows(state)
+  const selected = [...new Set(traceIds.map(id => resolveIdentity(state, 'trace', id)))].flatMap(id => rows.find(item => item.trace.id === id) ?? [])
+  const grouped = new Map<string, TraceWorkbenchRow[]>()
+  for (const row of selected) grouped.set(row.case.id, [...(grouped.get(row.case.id) ?? []), row])
+  const memberships = [...(next.datasetMemberships ?? [])]
+  for (const [caseId, caseRows] of grouped) {
+    if (dataset.frozen) { blocked.push({ caseId, reason: '目标数据集已冻结，不能修改成员。' }); continue }
+    if (kind === 'golden' && caseRows.some(row => row.case.sourceType !== 'ONLINE_WINDOW' || row.package?.status !== 'EVALUATED')) { blocked.push({ caseId, reason: '只有已评测的线上 Case 可以加入黄金集。' }); continue }
+    const selectedTraceIds = new Set(caseRows.map(row => resolveIdentity(next, 'trace', row.trace.id)))
+    const existing = next.datasets.filter(item => item.caseIds.includes(caseId) && (next.datasetMemberships ?? []).some(member => member.datasetId === item.id && member.datasetVersion === item.version && member.caseId === caseId && (member.scope === 'CASE_SHARED' || member.traceIds.some(id => selectedTraceIds.has(resolveIdentity(next, 'trace', id))))))
+    if (existing.length) { blocked.push({ caseId, reason: `已属于${existing.map(item => item.name).join('、')}（${kind === 'golden' ? '黄金集' : '评测集'}），不能重复加入。` }); continue }
+    dataset.caseIds.push(caseId); addedCaseIds.push(caseId)
+    memberships.push({ id: `membership-bulk:${dataset.id}:${caseId}:${at}`, datasetId: dataset.id, datasetVersion: dataset.version, caseId, traceIds: caseRows.map(row => row.trace.id), scope: 'TRACE', joinedAt: at, actor: '当前用户', origin: 'LOCAL' })
   }
-  dataset.caseIds = [...new Set(dataset.caseIds)]; dataset.sampleCount = dataset.caseIds.length; dataset.population = { ...dataset.population, totalSampleCount: dataset.sampleCount, localCaseCount: dataset.caseIds.length, externalSampleCount: 0 }; dataset.updatedAt = at
-  next.auditTrail.push({ id: `audit-bulk-trace-import-${Date.parse(at)}`, at, actor: '当前用户', action: 'BULK_TRACE_IMPORT', entityType: 'Dataset', entityId: dataset.id, reason: `批量导入${kind === 'golden' ? '黄金集' : '评测集'}`, changes: { addedCaseIds } })
-  return { state: next, addedCaseIds, blocked, datasetId: dataset.id }
+  if (!addedCaseIds.length) return { state, addedCaseIds, blocked, datasetId: dataset.id }
+  if (!target) next.datasets.push(dataset)
+  dataset.caseIds = [...new Set(dataset.caseIds)]
+  const enrolledTraceIds = memberships.filter(member => member.datasetId === dataset.id && member.datasetVersion === dataset.version).flatMap(member => member.traceIds)
+  const enrolledTraces = next.traces.filter(trace => enrolledTraceIds.includes(trace.id))
+  const timestamps = enrolledTraces.flatMap(trace => [trace.startedAt, trace.endedAt]).filter(Boolean).sort()
+  if (timestamps.length) dataset.timeRange = { from: timestamps[0], to: timestamps[timestamps.length - 1] }
+  dataset.sampleCount = dataset.caseIds.length; dataset.population = { ...dataset.population, totalSampleCount: dataset.sampleCount, localCaseCount: dataset.caseIds.length, externalSampleCount: 0 }; dataset.updatedAt = at
+  const audit = { id: `audit-bulk-trace-import:${dataset.id}:${at}:${addedCaseIds.join(':')}`, at, actor: '当前用户', action: 'BULK_TRACE_IMPORT', entityType: 'Dataset', entityId: dataset.id, reason: `批量导入${kind === 'golden' ? '黄金集' : '评测集'}`, changes: { addedCaseIds, traceIds: memberships.filter(item => addedCaseIds.includes(item.caseId)).flatMap(item => item.traceIds) } }
+  next.datasetMemberships = memberships.map(member => addedCaseIds.includes(member.caseId) && member.datasetId === dataset.id ? { ...member, sourceEventId: audit.id } : member)
+  next.auditTrail.push(audit)
+  next.updatedAt = at
+  return { state: appendGovernanceEvents(state, next, audit), addedCaseIds, blocked, datasetId: dataset.id }
 }

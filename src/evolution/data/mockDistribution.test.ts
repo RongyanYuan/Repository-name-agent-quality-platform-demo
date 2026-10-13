@@ -4,9 +4,10 @@ import { buildCaseAnalysisDataFromEvolution } from '../cases/model'
 import { validateEvolutionState } from './validation'
 import { ATTRIBUTION_DIMENSIONS } from '../domain'
 import { selectTasteLibraryTrigger } from './selectors'
+import { aliasesForIdentity } from '../identity'
 
 describe('structured Mock evaluation distribution', () => {
-  it('derives evaluated Case summaries from Trace Packages instead of leaving them UNKNOWN', () => {
+  it('retains recorded numeric assessments when evaluated Cases have unconfigured auxiliary summaries', () => {
     const state = createInitialEvolutionData()
     const packagesByCase = new Map(state.tracePackages.map((pkg) => [pkg.caseId, pkg]))
     const caseData = buildCaseAnalysisDataFromEvolution(state)
@@ -18,7 +19,25 @@ describe('structured Mock evaluation distribution', () => {
 
     expect(evaluatedCases.length).toBeGreaterThan(20)
     expect(evaluatedCases.some((record) => record.processSummary !== 'UNKNOWN' || record.outcomeSummary !== 'UNKNOWN')).toBe(true)
-    expect(evaluatedCases.filter((record) => record.processSummary === 'UNKNOWN' && record.outcomeSummary === 'UNKNOWN')).toHaveLength(0)
+    // Numeric-only Eval Agent results do not imply a business Pass/Fail
+    // threshold. UNKNOWN auxiliary summaries are valid only when backed by
+    // actual scored modules, evidence and a recorded evaluation version.
+    const unknownSummaries = evaluatedCases.filter(record => record.processSummary === 'UNKNOWN' && record.outcomeSummary === 'UNKNOWN')
+    for (const record of unknownSummaries) {
+      const packages = state.tracePackages.filter(pkg => pkg.caseId === record.id)
+      const scoredModules = packages.flatMap(pkg => pkg.moduleScores).filter(score => score.moduleCode !== 'CONTEXT' && score.score !== undefined)
+      expect(scoredModules.length).toBeGreaterThan(0)
+      for (const score of scoredModules) {
+        expect(Number.isFinite(score.score)).toBe(true)
+        expect(score.score).toBeGreaterThanOrEqual(0)
+        expect(score.score).toBeLessThanOrEqual(score.scoreScale === '0-2' ? 2 : 1)
+        expect(score.evalAgentVersion.trim()).not.toBe('')
+        expect(score.rubricVersion.trim()).not.toBe('')
+        expect(score.evidence.rootEvidenceIds.length).toBeGreaterThan(0)
+        expect(score.evidence.rootEvidenceIds.every(id => state.evidence.some(evidence => evidence.id === id && evidence.caseId === record.id && evidence.traceId === score.traceId))).toBe(true)
+      }
+      expect(state.outcomeEvals.some(evaluation => evaluation.caseId === record.id && evaluation.score !== undefined && evaluation.evidenceIds.length > 0)).toBe(true)
+    }
   })
 
   it('contains the 1000-user taste preference cohort and distinct self-evolution scenarios', () => {
@@ -72,7 +91,7 @@ describe('structured Mock evaluation distribution', () => {
 
   it('provides raw model telemetry without inventing cost-baseline deviations', () => {
     const state = createInitialEvolutionData()
-    const generated = state.traces.filter((trace) => trace.id.startsWith('trace-v2-'))
+    const generated = state.traces.filter((trace) => aliasesForIdentity(state, 'trace', trace.id).some(id => id.startsWith('trace-v2-')))
     expect(generated.length).toBeGreaterThan(20)
     expect(generated.every((trace) => typeof trace.telemetry.modelLatencyMs === 'number' && trace.telemetry.modelLatencyMs > 0)).toBe(true)
     expect(generated.every((trace) => typeof trace.telemetry.modelThroughputTokensPerSecond === 'number' && trace.telemetry.modelThroughputTokensPerSecond > 0)).toBe(true)
@@ -109,7 +128,27 @@ describe('structured Mock evaluation distribution', () => {
     expect(state.artifacts.filter((artifact) => !evaluatedArtifactIds.has(artifact.id))).toEqual([])
     expect(state.outcomeEvals.some((evaluation) => evaluation.verdict === 'PASS')).toBe(true)
     expect(state.outcomeEvals.some((evaluation) => evaluation.verdict === 'FAIL')).toBe(true)
-    expect(state.outcomeEvals.some((evaluation) => evaluation.verdict === 'UNKNOWN')).toBe(false)
+    const unconfigured = state.outcomeEvals.filter(evaluation => evaluation.verdict === 'UNKNOWN')
+    expect(unconfigured.length).toBeGreaterThan(0)
+    // Fixture prefixes are not a scoring contract. Every unconfigured
+    // assessment must name a valid owned artifact and actual source evidence.
+    for (const evaluation of unconfigured) {
+      expect(state.artifacts.some(artifact => artifact.id === evaluation.artifactId && artifact.caseId === evaluation.caseId && artifact.traceId === evaluation.traceId)).toBe(true)
+      expect(evaluation.evalVersion.trim()).not.toBe('')
+      expect(evaluation.evidenceIds.length).toBeGreaterThan(0)
+      expect(evaluation.evidenceIds.every(id => state.evidence.some(evidence => evidence.id === id && evidence.caseId === evaluation.caseId && evidence.artifactId === evaluation.artifactId))).toBe(true)
+      if (evaluation.score !== undefined) {
+        expect(Number.isFinite(evaluation.score)).toBe(true)
+        expect(evaluation.score).toBeGreaterThanOrEqual(0)
+        expect(evaluation.score).toBeLessThanOrEqual(evaluation.scoreScale === '0-2' ? 2 : 1)
+      } else {
+        expect(evaluation.rubricRule).toBe('待配置')
+      }
+    }
+    expect(unconfigured.some(evaluation => evaluation.score === undefined && evaluation.rubricRule === '待配置')).toBe(true)
+    // A numeric score has no implicit Pass/Fail threshold; unconfigured
+    // auxiliary verdicts remain UNKNOWN rather than fabricating a gate.
+    expect(unconfigured.some(evaluation => evaluation.score !== undefined && evaluation.scoreScale === '0-2')).toBe(true)
     expect(state.tracePackages.some((pkg) => pkg.moduleScores.some((score) => score.automaticStatus === 'UNKNOWN'))).toBe(true)
   })
 

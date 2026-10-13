@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { traceIdentity } from './identity'
 
 test.use({ timezoneId: 'Asia/Shanghai' })
 
@@ -15,13 +16,15 @@ test.describe('Skill 版本数据集评测工作台', () => {
     await expect(page.getByRole('heading', { name: '数据集与评测', level: 1, exact: true })).toHaveCount(1)
   })
 
-  test('工作台隐藏顶部 Skill 而其他页面仍保留全局 Skill 选择器', async ({ page }) => {
-    for (const route of ['/overview', '/cases', '/rules']) {
+  test('总览与 Case 保留全局 Skill，数据集和规则工作台使用各自对象选择', async ({ page }) => {
+    for (const route of ['/overview', '/cases']) {
       await page.goto(route)
       await expect(page.getByLabel('全局 Skill', { exact: true })).toHaveCount(1)
       await expect(page.getByLabel('全局 Skill', { exact: true })).toBeVisible()
       await expect(page.getByLabel('具体 Skill', { exact: true })).toHaveCount(0)
     }
+    await page.goto('/rules')
+    await expect(page.getByLabel('全局 Skill', { exact: true })).toHaveCount(0)
     await page.goto('/datasets-evaluations')
     await expect(page.getByLabel('全局 Skill', { exact: true })).toHaveCount(0)
     await expect(page.getByLabel('具体 Skill', { exact: true })).toHaveCount(1)
@@ -184,13 +187,19 @@ test.describe('Skill 版本数据集评测工作台', () => {
     await expect(page.getByRole('dialog', { name: /数据集详情/ })).toContainText('dataset-workspace-ppt-260-sop-attribution')
   })
 
-  test('已完成归因仍在旧版本历史中但不会出现在进行中下拉', async ({ page }) => {
-    await page.goto('/datasets-evaluations?skill=skill-ppt-builder&skillVersion=2.5.0&attribution=skill-sop&view=history')
+  test('历史完成后新问题重新进入进行中下拉，既有完成归因与冻结准出仍可反查', async ({ page }) => {
+    await page.goto('/datasets-evaluations?timeRange=30d&skill=skill-ppt-builder&skillVersion=2.5.0&attribution=skill-sop&view=history')
     const attribution = page.getByLabel('归因', { exact: true })
-    await expect(attribution.locator('option[value="skill-sop"]')).toHaveCount(0)
-    await expect(page.getByText(/已完成归因（保留历史筛选）/)).toBeVisible()
+    await expect(attribution.locator('option[value="skill-sop"]')).toHaveCount(1)
     const history = page.getByRole('table', { name: '归因历史列表' })
-    const completed = history.getByRole('row').filter({ hasText: 'skill-ppt-builder@2.5.0#skill-sop' })
+    const reopened = history.getByRole('row').filter({ hasText: 'skill-ppt-builder@2.5.0#skill-sop' })
+    await expect(reopened).toContainText('待归因确认')
+    await reopened.click()
+    await page.getByRole('dialog', { name: /归因历史详情/ }).locator('summary').filter({ hasText: 'gate-single-ppt-routing' }).click()
+    await expect(page.getByRole('dialog', { name: /归因历史详情/ }).getByRole('region', { name: '冻结准出报告 gate-single-ppt-routing' })).toBeVisible()
+
+    await page.goto('/datasets-evaluations?timeRange=30d&view=history')
+    const completed = history.getByRole('row').filter({ hasText: 'skill-spreadsheet@2.5.0#act-failed' })
     await expect(completed).toContainText('已准出')
     await completed.click()
     const detail = page.getByRole('dialog', { name: /归因历史详情/ })
@@ -198,6 +207,8 @@ test.describe('Skill 版本数据集评测工作台', () => {
     await expect(detail.getByRole('heading', { name: '单能力实验配置与结果' })).toBeVisible()
     await expect(detail).toContainText('准出决策')
     await expect(detail).toContainText('2.5.0')
+    await detail.locator('summary').filter({ hasText: 'gate-single-tool' }).click()
+    await expect(detail.getByRole('region', { name: '冻结准出报告 gate-single-tool' })).toBeVisible()
   })
 
   test('切换版本或 Skill 清除旧归因并使用新 Skill 最新版本', async ({ page }) => {
@@ -217,7 +228,7 @@ test.describe('Skill 版本数据集评测工作台', () => {
   })
 
   test('各 Skill 的所有固定版本历史均可查询且跨版本不会混合', async ({ page }) => {
-    await page.goto('/datasets-evaluations?view=history')
+    await page.goto('/datasets-evaluations?timeRange=30d&view=history')
     const history = page.getByRole('table', { name: '归因历史列表' })
     const targets = [
       { skill: 'skill-ppt-builder', version: '2.6.0', key: 'skill-ppt-builder@2.6.0#skill-sop' },
@@ -263,33 +274,37 @@ test.describe('Skill 版本数据集评测工作台', () => {
 
     const detail = page.getByRole('dialog', { name: /数据集详情/ })
     const samples = detail.getByRole('table', { name: '数据集样本 Trace' })
-    await expect(samples.getByRole('columnheader', { name: 'Query', exact: true })).toBeVisible()
+    await expect(samples.getByRole('columnheader', { name: 'Query / Trace', exact: true })).toBeVisible()
     await expect(samples.getByRole('columnheader', { name: 'Query 时间' })).toBeVisible()
     await expect(samples.getByRole('columnheader', { name: '来源' })).toBeVisible()
     await expect(samples.getByRole('columnheader', { name: '过程 / 产物（0–2）' })).toBeVisible()
-    await expect(samples).toContainText('trace-workspace-ppt-260-sop-1')
+    await expect(samples).toContainText(traceIdentity('trace-workspace-ppt-260-sop-1'))
     await expect(samples.locator('tbody tr')).toHaveCount(2)
-    await expect(samples).toContainText('trace-workspace-ppt-260-sop-2')
-    await expect(samples).not.toContainText('trace-workspace-ppt-260-sop-3')
-    await expect(samples).not.toContainText('trace-tool-export')
+    await expect(samples).toContainText(traceIdentity('trace-workspace-ppt-260-sop-2'))
+    await expect(samples).not.toContainText(traceIdentity('trace-workspace-ppt-260-sop-3'))
+    await expect(samples).not.toContainText(traceIdentity('trace-tool-export'))
     await expect(samples).toContainText('线上+时间窗口')
     await expect(samples).toContainText('过程 1.55 / 2')
     await expect(samples).toContainText('产物 0.70 / 2')
-    await expect(samples.getByRole('row').filter({ hasText: 'trace-workspace-ppt-260-sop-1' })).toContainText('09/27 12:00')
+    await expect(samples.getByRole('row').filter({ hasText: traceIdentity('trace-workspace-ppt-260-sop-1') })).toContainText('09/27 12:00')
 
     await samples.getByRole('button', { name: '查看 Case / Trace' }).first().click()
     const caseDetail = page.getByRole('dialog', { name: /Case 详情/ })
-    await expect(caseDetail).toContainText('trace-workspace-ppt-260-sop-1')
-    await caseDetail.getByRole('button', { name: '查看 Trace 执行' }).click()
-    await expect(caseDetail.getByRole('tab', { name: 'Trace 与 Evidence' })).toHaveAttribute('aria-selected', 'true')
-    await expect(caseDetail).toContainText('6 条 observations')
-    await expect(caseDetail).toContainText('render → read → validate')
+    await expect(caseDetail).toContainText(traceIdentity('trace-workspace-ppt-260-sop-1'))
+    await expect(caseDetail.getByRole('tab', { name: '评测中心' })).toHaveAttribute('aria-selected', 'true')
+    await caseDetail.getByRole('tab', { name: '评测中心' }).click()
     await caseDetail.getByRole('button', { name: '查看 skill Evidence' }).click()
     const evidence = page.getByRole('dialog', { name: /skill Evidence/ })
     await expect(evidence).toContainText('rubric-office-v2.1#skill')
-    await evidence.getByRole('button', { name: 'Close panel', exact: true }).click()
+    await evidence.getByRole('button', { name: /obs-.*workspace-ppt-260-sop-1/ }).first().click()
+    const execution = page.getByRole('dialog', { name: '执行节点详情' })
+    await execution.getByRole('button', { name: '查看该 Trace 全部节点' }).click()
+    await expect(execution).toContainText('6 条 observations')
+    await expect(execution).toContainText('render → read → validate')
+    await execution.getByRole('button', { name: 'Close panel', exact: true }).click()
     await caseDetail.getByRole('tab', { name: '评测中心' }).click()
     await expect(caseDetail.getByRole('heading', { name: 'Trace 模块评测矩阵' })).toBeVisible()
+    await caseDetail.getByRole('button', { name: '查看 skill 细项评分' }).click()
     await expect(caseDetail).toContainText('LLM Judge Reason')
   })
 
@@ -311,7 +326,7 @@ test.describe('Skill 版本数据集评测工作台', () => {
   })
 
   test('旧版本历史能反查来源任务并打开当次冻结准出报告', async ({ page }) => {
-    await page.goto('/datasets-evaluations?skill=skill-ppt-builder&skillVersion=2.5.0&view=history&historyItem=skill-ppt-builder%402.5.0%23skill-sop&decisionId=gate-single-ppt-routing')
+    await page.goto('/datasets-evaluations?timeRange=30d&skill=skill-ppt-builder&skillVersion=2.5.0&view=history&historyItem=skill-ppt-builder%402.5.0%23skill-sop&decisionId=gate-single-ppt-routing')
     const detail = page.getByRole('dialog', { name: /归因历史详情/ })
     await expect(detail).toContainText('case-ppt-management')
     await expect(detail).toContainText('process-eval-ppt-recall')
@@ -323,7 +338,7 @@ test.describe('Skill 版本数据集评测工作台', () => {
     await expect(report).toContainText('冻结运行记录')
     await expect(detail.getByRole('heading', { name: '当前实验台账' })).toBeVisible()
     await detail.getByRole('button', { name: 'case-ppt-management', exact: true }).first().click()
-    await expect(page.getByRole('dialog', { name: /Case 详情/ })).toContainText('trace-ppt-generate')
+    await expect(page.getByRole('dialog', { name: /Case 详情/ })).toContainText(traceIdentity('trace-ppt-generate'))
     await page.getByRole('button', { name: '返回来源页面' }).click()
     await expect(page.getByLabel('Skill 版本', { exact: true })).toHaveValue('2.5.0')
     await expect(page.getByRole('region', { name: '冻结准出报告 gate-single-ppt-routing' })).toBeVisible()

@@ -1,10 +1,16 @@
 import type { EvalResult, JudgeStatus, Observation, QualityData, Task, Trace } from '../../domain';
-import type { EvolutionState } from '../domain';
+import type { EvolutionState, Case, Dataset } from '../domain';
 import { resolveCaseSource } from '../labels';
 import { evolutionItemId, evolutionItemLabel } from '../taxonomy';
 import { normalizeSkillVersion } from '../data/skillWorkspace';
+import { aliasesForIdentity, resolveIdentity } from '../identity';
+import { selectTraceGovernance, type TraceGovernanceHistory } from '../data/traceGovernance';
+import { projectModuleReview } from '../reviews';
 export type ReferenceKind = import('../components/ViewPrimitives').ReferenceKind | 'issue-cluster';
 export interface CaseReference {
+    evaluationId?: string;
+    artifactId?: string;
+    caseView?: string;
     kind: ReferenceKind;
     id: string;
     label: string;
@@ -32,6 +38,8 @@ export interface SkillView {
     version: string;
 }
 export interface ArtifactView {
+    version?: string;
+    uri?: string;
     id: string;
     name: string;
     type: string;
@@ -57,6 +65,15 @@ export interface HumanRevisionView {
     at: string;
 }
 export interface CaseAnalysisRecord {
+    processDimensions?: Array<{ id?: string; module: string; dimension: string; score?: number; scoreId?: string }>;
+    moduleReviewStatus?: string;
+    traceSpecific?: boolean;
+    traceAliases?: string[];
+    sessionAliases?: string[];
+    governance?: TraceGovernanceHistory;
+    executionStatus?: string;
+    packageId?: string;
+    identityAliases?: string[];
     id: string;
     task: Task;
     trace?: Trace;
@@ -67,7 +84,7 @@ export interface CaseAnalysisRecord {
     skillsByTrace?: Record<string, SkillView>;
     artifacts: ArtifactView[];
     logs: LogView[];
-    processEvals: EvalResult[];
+    processEvals: Array<EvalResult & { observationId?: string; moduleCode?: string; scoreScale?: '0-1' | '0-2' }>;
     outcomeEvals: EvalResult[];
     processSummary: JudgeStatus;
     outcomeSummary: JudgeStatus;
@@ -114,6 +131,10 @@ export interface CaseAnalysisRecord {
     tokens?: number;
     latencyMs?: number;
     provenanceLabels?: string[];
+    /** Explicit dataset memberships for the active Trace (or the union of all Trace memberships for a Case). */
+    datasetRefs?: CaseDatasetReference[];
+    /** Governance time windows containing the Query timestamp for this Trace. */
+    timeWindowRefs?: CaseTimeWindowReference[];
     deliveryUri?: string;
     moduleEvaluationsByTrace?: Record<string, Array<Record<string, unknown>>>;
     evaluationScenariosByTrace?: Record<string, Array<{
@@ -123,11 +144,33 @@ export interface CaseAnalysisRecord {
         findingId?: string;
     }>>;
 }
+export type DatasetAnalysisCategory = 'GATE' | 'GOLDEN' | 'PERSONAL';
+export interface CaseDatasetReference {
+    id: string;
+    name: string;
+    version: string;
+    type: Dataset['type'];
+    category: DatasetAnalysisCategory;
+    purpose?: string;
+    frozen: boolean;
+    membershipScope: 'TRACE' | 'CASE_SHARED';
+    joinedAt?: string;
+}
+export interface CaseTimeWindowReference {
+    id: string;
+    name: string;
+    from: string;
+    to: string;
+}
 export interface CaseAnalysisData {
+    evolutionState?: EvolutionState;
+    moduleReviews?: EvolutionState['moduleReviews'];
+    traceRecords?: CaseAnalysisRecord[];
     cases: CaseAnalysisRecord[];
     evidence: QualityData['evidence'];
     rootEvidence?: EvolutionState['evidence'];
     referenceTime: string;
+    timeWindows?: CaseTimeWindowReference[];
 }
 export interface CaseAnalysisFilters {
     query?: string;
@@ -158,7 +201,17 @@ export interface CaseAnalysisFilters {
   tokenMax?: number;
   latencyMin?: number;
   latencyMax?: number;
-  evolutionItem?: string;
+    evolutionItem?: string;
+    /** Explicit Query time window. Both endpoints are inclusive. */
+    timeFrom?: string;
+    timeTo?: string;
+    /** Existing governance Window ID; resolved against Case/Trace Query time. */
+    timeWindowId?: string;
+    datasetCategory?: DatasetAnalysisCategory;
+    /** Compatibility alias used by earlier URL proposals. */
+    datasetClass?: DatasetAnalysisCategory;
+    datasetPurpose?: string;
+    datasetId?: string;
 }
 export const emptyCaseAnalysisFilters: CaseAnalysisFilters = { query: '', sessionId: '', traceId: '', skillId: '', skillVersion: '', timeRange: '30d', processEval: '', outcomeEval: '', logId: '', routingTags: [], multiScene: 'all' };
 const effectiveStatus = (evaluation: EvalResult): JudgeStatus => evaluation.humanStatus ?? evaluation.status ?? evaluation.autoStatus;
@@ -181,6 +234,76 @@ const routingFor = (task: Task, index: number) => task.id === 'task-001' ? ['策
 const moduleFor = (task: Task, failure?: Observation) => failure?.nodeType === 'Memory' ? 'Memory' : failure?.nodeType === 'Skill' || failure?.nodeType === 'Skill Routing' ? 'Skill' : failure?.nodeType === 'Tool' ? 'Act' : failure?.nodeType === 'Task Understanding' || failure?.nodeType === 'Planning / Decision' ? 'Reason' : task.rootCause === 'None' ? '未归因' : task.rootCause;
 const dimensionFor = (module: string, task: Task) => module === 'Memory' ? (task.id === 'task-001' ? '准确率低' : '召回率低') : module === 'Skill' ? (task.rootCause === 'Skill Routing' ? 'skill name/description错误' : 'skill sop错误') : module === 'Act' ? '工具未执行成功' : module === 'Reason' ? (task.rootCause === 'Task Understanding' ? '没有充分响应用户query的客观诉求' : '没有做出最正确/高效的选择') : '需求待补充';
 const artifactName = (task: Task) => task.businessType === 'PPT' ? '管理层经营复盘.pptx' : task.businessType === 'Excel' ? '业务分析.xlsx' : task.businessType === 'Word' ? '结构化文档.docx' : '任务结果';
+
+/**
+ * Dataset classification is explicit when available, with a conservative
+ * compatibility mapping for older Mock records. Filtering must never infer a
+ * personal set from a display name alone.
+ */
+function datasetCategory(dataset: Dataset): DatasetAnalysisCategory {
+    const value = (dataset as Dataset & { datasetCategory?: DatasetAnalysisCategory; ownerScope?: 'SYSTEM' | 'USER' }).datasetCategory;
+    if (value) return value;
+    const ownerScope = (dataset as Dataset & { ownerScope?: 'SYSTEM' | 'USER' }).ownerScope;
+    if (ownerScope === 'USER') return 'PERSONAL';
+    // `source` may say “Golden / Challenge” for a regression gate. Only an
+    // explicit role or purpose can classify a dataset as the Golden set.
+    if (dataset.setRole === 'GOLDEN' || dataset.purpose === '黄金集') return 'GOLDEN';
+    return 'GATE';
+}
+
+function datasetMembershipForTrace(state: EvolutionState, dataset: Dataset, record: Case, traceId: string): CaseDatasetReference | undefined {
+    const allForCase = (state.datasetMemberships ?? []).filter(item => item.datasetId === dataset.id && item.caseId === record.id);
+    // A valid explicit membership is sufficient even when an older dataset
+    // snapshot omitted the denormalized caseIds list.
+    if (!dataset.caseIds.includes(record.id) && !allForCase.length) return undefined;
+    const memberships = allForCase.filter(item => item.datasetVersion === dataset.version);
+    if (allForCase.length) {
+        // Once a dataset has explicit membership rows, only the current version
+        // and exact Trace/Case scope are valid. This prevents a sibling Trace
+        // from appearing merely because its Case is also present in the set.
+        if (!memberships.length) return undefined;
+        const canonicalTraceId = resolveIdentity(state, 'trace', traceId);
+        const matched = memberships.find(item => item.scope === 'CASE_SHARED' || item.traceIds.some(id => resolveIdentity(state, 'trace', id) === canonicalTraceId));
+        if (!matched) return undefined;
+        return { id: dataset.id, name: dataset.name, version: dataset.version, type: dataset.type, category: datasetCategory(dataset), purpose: dataset.purpose, frozen: dataset.frozen, membershipScope: matched.scope, joinedAt: matched.joinedAt };
+    }
+    // Legacy datasets predate DatasetMembershipRecord and are explicitly Case
+    // scoped. Keep them visible while marking that precision is unavailable.
+    return { id: dataset.id, name: dataset.name, version: dataset.version, type: dataset.type, category: datasetCategory(dataset), purpose: dataset.purpose, frozen: dataset.frozen, membershipScope: 'CASE_SHARED' };
+}
+
+export function datasetRefsForTrace(state: EvolutionState, record: Case, traceId: string): CaseDatasetReference[] {
+    return state.datasets.flatMap(dataset => {
+        const reference = datasetMembershipForTrace(state, dataset, record, traceId);
+        return reference ? [reference] : [];
+    });
+}
+
+export function timeWindowRefsForTrace(state: EvolutionState, timestamp: string): CaseTimeWindowReference[] {
+    const at = Date.parse(timestamp);
+    if (!Number.isFinite(at)) return [];
+    return state.windows.flatMap(window => {
+        const range = window.timeRange;
+        if (!range) return [];
+        const from = Date.parse(range.from); const to = Date.parse(range.to);
+        return Number.isFinite(from) && Number.isFinite(to) && at >= from && at <= to
+            ? [{ id: window.id, name: window.name, from: range.from, to: range.to }]
+            : [];
+    });
+}
+
+function uniqueDatasetRefs(refs: CaseDatasetReference[]): CaseDatasetReference[] {
+    const seen = new Map<string, CaseDatasetReference>();
+    refs.forEach(reference => {
+        const key = `${reference.id}@${reference.version}`;
+        const existing = seen.get(key);
+        // Preserve the strongest scope when a Case aggregate combines an
+        // explicit Trace membership with a legacy Case-shared membership.
+        if (!existing || (existing.membershipScope === 'CASE_SHARED' && reference.membershipScope === 'TRACE')) seen.set(key, reference);
+    });
+    return [...seen.values()];
+}
+
 function sessionTurnsFor(task: Task, sessionTasks: Task[]): SessionTurn[] {
     const turns: SessionTurn[] = [];
     if (task.id === 'task-001')
@@ -243,11 +366,12 @@ const summarizeModuleStatuses = (statuses: string[]): JudgeStatus => {
 };
 /** Normalizes the upgraded governance store into the UI's stable case view. */
 export function buildCaseAnalysisDataFromEvolution(state: EvolutionState): CaseAnalysisData {
-    const cases = state.cases.map((record): CaseAnalysisRecord => {
+    const buildRecord = (record: Case, activeTraceId?: string): CaseAnalysisRecord => {
         const traces = state.traces.filter((item) => item.caseId === record.id).sort((a, b) => a.sequence - b.sequence);
-        const primaryTrace = traces[traces.length - 1];
+        const primaryTrace = traces.find(item => item.id === activeTraceId) ?? traces[traces.length - 1];
         const observations = state.observations.filter((item) => item.caseId === record.id).sort((a, b) => a.sequence - b.sequence);
-        const failureLog = observations.find((item) => item.status === 'FAILED');
+        const activeObservations = observations.filter(item => item.traceId === primaryTrace?.id);
+        const failureLog = activeObservations.find((item) => item.status === 'FAILED');
         const failureObservation: Observation | undefined = failureLog && primaryTrace ? {
             id: failureLog.id, traceId: failureLog.traceId, sequence: failureLog.sequence,
             nodeType: failureLog.nodeType === 'Reason' ? 'Planning / Decision' : failureLog.nodeType === 'Act' ? 'Tool' : failureLog.nodeType === 'Artifact' ? 'Final Outcome' : failureLog.nodeType,
@@ -260,32 +384,41 @@ export function buildCaseAnalysisDataFromEvolution(state: EvolutionState): CaseA
             businessType: record.scenario.includes('PPT') ? 'PPT' : record.scenario.includes('Excel') ? 'Excel' : record.scenario.includes('Word') ? 'Word' : 'General',
             complexity: 'Complex', agentVersion: record.agentVersion, environment: record.environment, status: record.resultStatus === 'FAIL' ? 'Failed' : record.processStatus === 'FAIL' ? 'Effective but Inefficient' : 'Effective',
             outcomeType: record.artifactIds.length ? 'Content Artifact' : 'Operation', rootCause: failureLog?.nodeType === 'Memory' ? 'Memory' : failureLog?.nodeType === 'Reason' ? 'Planning / Decision' : failureLog?.nodeType === 'Skill' ? 'Skill Internal' : failureLog ? 'Tool' : 'None',
-            latency: traces.reduce((sum, item) => sum + item.totalLatencyMs, 0), cost: 0, tokens: traces.reduce((sum, item) => sum + item.inputTokens + item.outputTokens, 0), modelCalls: 0,
+            latency: primaryTrace?.totalLatencyMs ?? 0, cost: 0, tokens: primaryTrace ? primaryTrace.inputTokens + primaryTrace.outputTokens : 0, modelCalls: primaryTrace?.telemetry.modelCallCount ?? 0,
             toolCalls: observations.filter((item) => item.toolName).length, loopCount: 0, retryCount: observations.reduce((sum, item) => sum + item.retryCount, 0), timestamp: record.createdAt,
             skill: record.skillIds[0] ?? 'Skill 未记录', finalOutcome: record.feedback ?? (record.resultStatus === 'FAIL' ? '结果评测未通过' : '结果评测通过'), evals: [], processEvals: [], isBadcase: record.resultStatus === 'FAIL', isGolden: false
         };
-        const processEvals: EvalResult[] = state.processEvals.filter((item) => item.caseId === record.id).map((item) => ({ id: item.id, taskId: record.id, family: 'Process Eval', dimension: item.dimension, autoStatus: legacyStatus(item.revisions[0]?.verdict ?? item.verdict), autoReason: item.revisions[0]?.reason ?? '判定依据未记录', evidenceIds: [...item.evidenceIds], humanStatus: item.revisions.find((revision) => revision.source === 'HUMAN') ? legacyStatus(item.revisions.find((revision) => revision.source === 'HUMAN')!.verdict) : undefined, humanReason: item.revisions.find((revision) => revision.source === 'HUMAN')?.reason, judgeVersion: item.evalVersion, score: item.score, status: legacyStatus(item.verdict), reason: item.revisions[item.revisions.length - 1]?.reason }));
-        const outcomeEvals: EvalResult[] = state.outcomeEvals.filter((item) => item.caseId === record.id).map((item) => ({ id: item.id, taskId: record.id, family: 'Result Eval', dimension: item.dimension, autoStatus: legacyStatus(item.revisions[0]?.verdict ?? item.verdict), autoReason: item.revisions[0]?.reason ?? '判定依据未记录', evidenceIds: [...item.evidenceIds], humanStatus: item.revisions.find((revision) => revision.source === 'HUMAN') ? legacyStatus(item.revisions.find((revision) => revision.source === 'HUMAN')!.verdict) : undefined, humanReason: item.revisions.find((revision) => revision.source === 'HUMAN')?.reason, judgeVersion: item.evalVersion, score: item.score, status: legacyStatus(item.verdict), reason: item.revisions[item.revisions.length - 1]?.reason }));
+        const evaluationView = (item: EvolutionState['processEvals'][number] | EvolutionState['outcomeEvals'][number], family: EvalResult['family']): EvalResult => {
+            const automatic = item.revisions.filter(revision=>revision.source==='AUTOMATIC').at(-1);
+            const human = item.revisions.filter(revision=>revision.source==='HUMAN').at(-1);
+            return { id:item.id, taskId:record.id, family, ...('observationId' in item ? {observationId:item.observationId, moduleCode:state.observations.find(node=>node.id===item.observationId)?.nodeType, scoreScale:'0-1' as const} : {}), dimension:item.dimension, autoStatus:legacyStatus(automatic?.verdict ?? item.verdict), autoReason:automatic?.reason ?? '判定依据未记录', evidenceIds:[...item.evidenceIds], humanStatus:human ? legacyStatus(human.verdict) : undefined, humanReason:human?.reason, humanScore:human?.score, judgeVersion:item.evalVersion, score:automatic?.score ?? (human ? undefined : item.score), status:legacyStatus(item.verdict), reason:automatic?.reason };
+        };
+        const processEvals: EvalResult[] = state.processEvals.filter(item=>item.caseId===record.id).map(item=>evaluationView(item,'Process Eval'));
+        const outcomeEvals: EvalResult[] = state.outcomeEvals.filter(item=>item.caseId===record.id).map(item=>evaluationView(item,'Result Eval'));
         task.evals = outcomeEvals;
         task.processEvals = processEvals;
         const skillForTrace = (trace?: EvolutionState['traces'][number]): SkillView => {
-            const pkg = trace ? state.tracePackages.find(item => item.traceId === trace.id) : undefined;
+            const pkg = trace ? state.tracePackages.filter(item=>item.traceId===trace.id).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)||b.id.localeCompare(a.id))[0] : undefined;
             const id = pkg?.skillIds[0] ?? record.skillIds[0] ?? '未记录';
             const skill = state.skills.find(item => item.id === id);
             const recordedVersion = trace?.skillVersion ?? pkg?.skillVersion;
             return { id, name: skill?.name ?? id, version: recordedVersion ? normalizeSkillVersion(recordedVersion) : '版本未记录' };
         };
-        const artifacts: ArtifactView[] = state.artifacts.filter((item) => item.caseId === record.id).map((item) => ({ id: item.id, name: item.name, type: item.kind, status: item.status, outcomeEvalIds: state.outcomeEvals.filter((evaluation) => evaluation.artifactId === item.id).map((evaluation) => evaluation.id), sourceObservationIds: observations.filter((observation) => observation.traceId === item.traceId && (observation.nodeType === 'Tool' || observation.nodeType === 'Artifact')).map((observation) => observation.id) }));
-        const attributions = state.attributions.filter((item) => item.caseId === record.id);
-        const issues = state.issues.filter((item) => item.caseId === record.id);
+        const artifacts: ArtifactView[] = state.artifacts.filter((item) => item.caseId === record.id && item.traceId === primaryTrace?.id).map((item) => ({ id: item.id, name: item.name, type: item.kind, status: item.status, version: item.version, uri: item.uri, outcomeEvalIds: state.outcomeEvals.filter((evaluation) => evaluation.artifactId === item.id).map((evaluation) => evaluation.id), sourceObservationIds: activeObservations.filter((observation) => observation.traceId === item.traceId && (observation.nodeType === 'Tool' || observation.nodeType === 'Artifact')).map((observation) => observation.id) }));
+        const attributions = state.attributions.filter((item) => item.caseId === record.id && item.traceId === primaryTrace?.id);
+        const issues = state.issues.filter((item) => attributions.some(attribution => attribution.id === item.attributionId));
         const issueIds = issues.map((item) => item.id);
-        const clusters = state.issueClusters.filter((item) => item.caseIds.includes(record.id) || item.issueIds.some((id) => issueIds.includes(id)));
-        const variants = state.variants.filter((item) => item.sourceCaseIds.includes(record.id) || item.sourceIssueIds.some((id) => issueIds.includes(id)) || item.sourceClusterIds.some((id) => clusters.some((cluster) => cluster.id === id)));
+        const clusters = state.issueClusters.filter((item) => item.issueIds.some((id) => issueIds.includes(id)));
+        const variants = state.variants.filter((item) => item.sourceIssueIds.some((id) => issueIds.includes(id)) || item.sourceClusterIds.some((id) => clusters.some((cluster) => cluster.id === id)));
         const experiments = state.experiments.filter((item) => item.variantIds.some((id) => variants.some((variant) => variant.id === id)));
         const releases = state.releases.filter((item) => item.variantIds.some((id) => variants.some((variant) => variant.id === id)));
-        const packageRecord = state.tracePackages.find((item) => item.traceId === primaryTrace?.id);
+        const packageForTrace = (traceId?: string) => {
+            const pkg = state.tracePackages.filter(item=>item.traceId===traceId).sort((a,b)=>b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))[0];
+            return pkg ? {...pkg, moduleScores:pkg.moduleScores.map(score=>projectModuleReview(score,state.moduleReviews ?? []))} : undefined;
+        };
+        const packageRecord = packageForTrace(primaryTrace?.id);
         const packageRecords = Object.fromEntries(traces.map((trace) => {
-            const pkg = state.tracePackages.find((item) => item.traceId === trace.id);
+            const pkg = packageForTrace(trace.id);
             const findings = pkg ? state.evaluationFindings.filter((finding) => pkg.findingIds.includes(finding.id)) : [];
             return [trace.id, { pkg, findings }];
         }));
@@ -320,8 +453,23 @@ export function buildCaseAnalysisDataFromEvolution(state: EvolutionState): CaseA
         const session = state.sessions.find((item) => item.id === record.sessionId);
         const sourceInfo = resolveCaseSource(state, record);
         const evalByTrace = (evaluations: EvalResult[]) => Object.fromEntries(traces.map(trace => [trace.id, evaluations.filter(item => state.processEvals.some(original => original.id === item.id && original.traceId === trace.id) || state.outcomeEvals.some(original => original.id === item.id && original.traceId === trace.id))]));
-        const sourceFields = { sourceRefId: sourceInfo.refId, sourceRefKind: sourceInfo.refId?.startsWith('window-') ? 'window' as const : 'dataset' as const, sourceRefVersion: sourceInfo.refVersion, discoveryMethod: observations.some(item => item.status === 'FAILED') ? '系统错误 / 自动评测' : record.feedback ? '用户反馈 / 自动评测' : '自动评测' };
-        return {
+        const sourceFields = { sourceRefId: sourceInfo.refId, sourceRefKind: sourceInfo.refId?.startsWith('window-') ? 'window' as const : 'dataset' as const, sourceRefVersion: sourceInfo.refVersion, discoveryMethod: activeObservations.some(item => item.status === 'FAILED') ? '系统错误 / 自动评测' : record.feedback ? '用户反馈 / 自动评测' : '自动评测' };
+        const datasetRefs = uniqueDatasetRefs(activeTraceId
+            ? datasetRefsForTrace(state, record, activeTraceId)
+            : traces.flatMap(trace => datasetRefsForTrace(state, record, trace.id)));
+        const queryTimestamp = primaryTrace?.queryAt ?? primaryTrace?.startedAt ?? record.createdAt;
+        const timeWindowRefs = activeTraceId
+            ? timeWindowRefsForTrace(state, queryTimestamp)
+            : [...new Map(traces.flatMap(trace => timeWindowRefsForTrace(state, trace.queryAt ?? trace.startedAt ?? record.createdAt)).map(window => [window.id, window])).values()];
+        const projected: CaseAnalysisRecord = {
+            processDimensions: packageRecord?.rating?.processDimensions,
+            moduleReviewStatus: !packageStatuses.some(score=>score.moduleCode!=='CONTEXT') ? 'NO_RECORD' : packageStatuses.some(score=>score.reviewState==='STALE') ? 'STALE' : packageStatuses.filter(score=>score.moduleCode!=='CONTEXT').every(score=>Boolean(score.humanStatus)) ? 'REVIEWED' : 'UNREVIEWED',
+            traceSpecific: Boolean(activeTraceId),
+            traceAliases: activeTraceId ? aliasesForIdentity(state, 'trace', activeTraceId) : traces.flatMap(trace=>aliasesForIdentity(state,'trace',trace.id)),
+            sessionAliases: aliasesForIdentity(state, 'session', record.sessionId),
+            executionStatus: primaryTrace?.status ?? 'UNKNOWN', packageId: packageRecord?.id,
+            identityAliases: [...(activeTraceId ? aliasesForIdentity(state, 'trace', activeTraceId) : traces.flatMap(trace=>aliasesForIdentity(state,'trace',trace.id))), ...aliasesForIdentity(state, 'session', record.sessionId)],
+            governance: primaryTrace ? selectTraceGovernance(state, primaryTrace.id) : undefined,
             id: record.id, task, trace: primaryTrace ? { id: primaryTrace.id, taskId: record.id, sessionId: record.sessionId, startedAt: primaryTrace.startedAt, totalLatency: primaryTrace.totalLatencyMs, observations: observations.filter((item) => item.traceId === primaryTrace.id).map((item): Observation => ({ id: item.id, traceId: item.traceId, sequence: item.sequence, nodeType: item.nodeType === 'Reason' ? 'Planning / Decision' : item.nodeType === 'Act' ? 'Tool' : item.nodeType === 'Artifact' ? 'Final Outcome' : item.nodeType, status: item.status === 'FAILED' ? 'FAIL' : item.status === 'SKIPPED' ? 'N/A' : 'PASS', input: item.input, output: item.output, latency: item.latencyMs, tool: item.toolName, reason: item.output, error: item.status === 'FAILED' ? item.output : undefined, metadata: { logId: item.logId }, evidenceIds: [...item.evidenceIds] })) } : undefined, traces: traces.map((trace) => ({ id: trace.id, taskId: record.id, sessionId: record.sessionId, startedAt: trace.startedAt, totalLatency: trace.totalLatencyMs, observations: observations.filter((item) => item.traceId === trace.id).map((item): Observation => ({ id: item.id, traceId: item.traceId, sequence: item.sequence, nodeType: item.nodeType === 'Reason' ? 'Planning / Decision' : item.nodeType === 'Act' ? 'Tool' : item.nodeType === 'Artifact' ? 'Final Outcome' : item.nodeType, status: item.status === 'FAILED' ? 'FAIL' : item.status === 'SKIPPED' ? 'N/A' : 'PASS', input: item.input, output: item.output, latency: item.latencyMs, tool: item.toolName, reason: item.output, error: item.status === 'FAILED' ? item.output : undefined, metadata: { logId: item.logId }, evidenceIds: [...item.evidenceIds] })) })),
             session: { id: record.sessionId, turns: session?.turns.map((turn) => ({ id: turn.id, sequence: turn.sequence, role: turn.role === 'USER' ? 'user' : 'agent', content: turn.content, taskId: turn.caseId, traceId: turn.traceId, createdAt: turn.createdAt })) ?? [{ id: record.id + '-user', sequence: 1, role: 'user', content: record.query, taskId: record.id, traceId: primaryTrace?.id, createdAt: record.createdAt }, { id: record.id + '-agent', sequence: 2, role: 'agent', content: record.feedback ?? task.finalOutcome, taskId: record.id, traceId: primaryTrace?.id, createdAt: record.updatedAt }] },
             skill: skillForTrace(primaryTrace), skillsByTrace: Object.fromEntries(traces.map(trace => [trace.id, skillForTrace(trace)])), artifacts,
@@ -341,12 +489,23 @@ export function buildCaseAnalysisDataFromEvolution(state: EvolutionState): CaseA
                     by: event.actor,
                     at: event.at
                 };
-            }), links, attributions: attributions.map((item) => ({ kind: 'issue' as const, id: item.id, label: `${item.module} · ${evolutionItemLabel(item.dimension)}`, status: item.status, module: item.module, dimension: evolutionItemLabel(item.dimension), routingTags: [...item.routingLabels] })), moduleEvaluations: packageRecord?.moduleScores as unknown as Array<Record<string, unknown>>, moduleEvaluationsByTrace: Object.fromEntries(Object.entries(packageRecords).map(([traceId, value]) => [traceId, value.pkg?.moduleScores as unknown as Array<Record<string, unknown>> ?? []])), sourceLabel: resolveCaseSource(state, record).label, channel: primaryTrace?.channel, verticalScenario: primaryTrace?.verticalScenario, processFinalScore: packageRecord?.rating?.processFinal, outcomeFinalScore: packageRecord?.rating?.outcomeFinal, tokens: primaryTrace ? primaryTrace.inputTokens + primaryTrace.outputTokens : 0, latencyMs: primaryTrace?.totalLatencyMs, provenanceLabels: [...new Set([resolveCaseSource(state, record).label, ...state.datasets.filter(dataset => dataset.caseIds.includes(record.id)).map(dataset => dataset.name)])], deliveryUri: artifacts[0]?.id ? `mock://artifacts/${artifacts[0].id}` : undefined, evaluationScenarios: packageFindings.map((finding) => ({ label: finding.scenarioLabel ?? '模块评测 Agent 返回场景', dimension: evolutionItemLabel(finding.dimensionLabel), path: finding.optimizationPath ?? '待配置', findingId: finding.id })), evaluationScenariosByTrace: Object.fromEntries(Object.entries(packageRecords).map(([traceId, value]) => [traceId, value.findings.map((finding) => ({ label: finding.scenarioLabel ?? '模块评测 Agent 返回场景', dimension: evolutionItemLabel(finding.dimensionLabel), path: finding.optimizationPath ?? '待配置', findingId: finding.id }))])), tastePreference: tastePreference ? { populationTotal: tastePreference.populationTotal, preferenceCount: tastePreference.preferenceCount, preferenceValue: tastePreference.preferenceValue, preferenceRate: tastePreference.preferenceRate, relatedDataCount: tastePreference.relatedDataCount, relatedDataThreshold: tastePreference.relatedDataThreshold, judgeReason: tastePreference.judgeReason, routingLabel: tastePreference.routingLabel, optimizationPath: tastePreference.optimizationPath } : undefined
+            }), links, attributions: attributions.map((item) => ({ kind: 'issue' as const, id: item.id, label: `${item.module} · ${evolutionItemLabel(item.dimension)}`, status: item.status, module: item.module, dimension: evolutionItemLabel(item.dimension), routingTags: [...item.routingLabels] })), moduleEvaluations: packageRecord?.moduleScores as unknown as Array<Record<string, unknown>>, moduleEvaluationsByTrace: Object.fromEntries(Object.entries(packageRecords).map(([traceId, value]) => [traceId, value.pkg?.moduleScores as unknown as Array<Record<string, unknown>> ?? []])), sourceLabel: resolveCaseSource(state, record).label, channel: primaryTrace?.channel, verticalScenario: primaryTrace?.verticalScenario, processFinalScore: packageRecord?.rating?.processFinal, outcomeFinalScore: packageRecord?.rating?.outcomeFinal, tokens: primaryTrace ? primaryTrace.inputTokens + primaryTrace.outputTokens : 0, latencyMs: primaryTrace?.totalLatencyMs, provenanceLabels: [...new Set([resolveCaseSource(state, record).label, ...datasetRefs.map(dataset => dataset.name)])], datasetRefs, timeWindowRefs, deliveryUri: artifacts[0]?.id ? `mock://artifacts/${artifacts[0].id}` : undefined, evaluationScenarios: packageFindings.map((finding) => ({ label: finding.scenarioLabel ?? '模块评测 Agent 返回场景', dimension: evolutionItemLabel(finding.dimensionLabel), path: finding.optimizationPath ?? '待配置', findingId: finding.id })), evaluationScenariosByTrace: Object.fromEntries(Object.entries(packageRecords).map(([traceId, value]) => [traceId, value.findings.map((finding) => ({ label: finding.scenarioLabel ?? '模块评测 Agent 返回场景', dimension: evolutionItemLabel(finding.dimensionLabel), path: finding.optimizationPath ?? '待配置', findingId: finding.id }))])), tastePreference: tastePreference ? { populationTotal: tastePreference.populationTotal, preferenceCount: tastePreference.preferenceCount, preferenceValue: tastePreference.preferenceValue, preferenceRate: tastePreference.preferenceRate, relatedDataCount: tastePreference.relatedDataCount, relatedDataThreshold: tastePreference.relatedDataThreshold, judgeReason: tastePreference.judgeReason, routingLabel: tastePreference.routingLabel, optimizationPath: tastePreference.optimizationPath } : undefined
         };
-    });
+        projected.processEvals = processEvals.filter(item => state.processEvals.some(original => original.id === item.id && original.traceId === primaryTrace?.id));
+        projected.outcomeEvals = outcomeEvals.filter(item => state.outcomeEvals.some(original => original.id === item.id && original.traceId === primaryTrace?.id));
+        projected.processSummary = packageProcessSummary ?? summarizeEvals(projected.processEvals);
+        projected.outcomeSummary = packageOutcomeSummary ?? summarizeEvals(projected.outcomeEvals);
+        projected.logs = projected.logs.filter(item => item.traceId === primaryTrace?.id);
+        projected.evidenceIds = [...new Set(state.evidence.filter(item => item.traceId === primaryTrace?.id).map(item => item.id))];
+        projected.task = { ...task, query:packageRecord?.query ?? session?.turns.find(turn=>turn.traceId===primaryTrace?.id && turn.role==='USER')?.content ?? record.query, timestamp: primaryTrace?.queryAt ?? primaryTrace?.startedAt ?? record.createdAt, toolCalls: primaryTrace?.telemetry.toolCallCount ?? 0, loopCount: primaryTrace?.telemetry.loopCount ?? 0, retryCount: primaryTrace?.telemetry.retryCount ?? 0, evals: projected.outcomeEvals, processEvals: projected.processEvals };
+        return projected;
+    };
+    const cases = state.cases.map(record => buildRecord(record));
+    const traceRecords = state.cases.flatMap(record => state.traces.filter(trace => trace.caseId === record.id).map(trace => buildRecord(record, trace.id)));
     const queryTimes = state.cases.map(record => Date.parse(record.createdAt)).filter(Number.isFinite);
     const referenceTime = queryTimes.length ? new Date(Math.max(...queryTimes)).toISOString() : state.updatedAt;
-    return { cases, rootEvidence: state.evidence, evidence: state.evidence.map((item) => ({ id: item.id, observationId: item.observationId, type: item.kind === 'ERROR' ? 'Error' : item.kind === 'ARTIFACT' ? 'Artifact' : item.kind === 'USER_FEEDBACK' ? 'User Feedback' : item.kind === 'INPUT' ? 'Input' : 'Output', summary: item.content, source: item.source })), referenceTime };
+    const timeWindows = state.windows.flatMap(window => window.timeRange ? [{ id: window.id, name: window.name, from: window.timeRange.from, to: window.timeRange.to }] : []);
+    return { evolutionState: state, cases, traceRecords, moduleReviews: state.moduleReviews, rootEvidence: state.evidence, evidence: state.evidence.map((item) => ({ id: item.id, observationId: item.observationId, type: item.kind === 'ERROR' ? 'Error' : item.kind === 'ARTIFACT' ? 'Artifact' : item.kind === 'USER_FEEDBACK' ? 'User Feedback' : item.kind === 'INPUT' ? 'Input' : 'Output', summary: item.content, source: item.source })), referenceTime, timeWindows };
 }
 const includes = (value: string | undefined, query: string | undefined) => !query?.trim() || (value ?? '').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
 function matchesFinalScore(score: number | undefined, filter: string, legacyStatus?: JudgeStatus): boolean {
@@ -363,16 +522,38 @@ function matchesFinalScore(score: number | undefined, filter: string, legacyStat
         return false;
     return score >= min && score <= max;
 }
+function matchesDatasetPurpose(reference: CaseDatasetReference, filter: string): boolean {
+    if (reference.purpose === filter || reference.type === filter) return true;
+    const aliases: Record<string, string[]> = {
+        ATTRIBUTION: ['原始归因集'],
+        GENERALIZATION: ['同类泛化集', '泛化集合'],
+        REGRESSION: ['相邻及无关回归集'],
+        WINDOW_ONLINE: ['窗口线上数据全集']
+    };
+    return aliases[reference.type]?.includes(filter) ?? false;
+}
 export function filterCaseAnalysisRecords(records: CaseAnalysisRecord[], filters: CaseAnalysisFilters, referenceTime: string): CaseAnalysisRecord[] {
     const days = filters.timeRange === '24h' ? 1 : filters.timeRange === '7d' ? 7 : filters.timeRange === '14d' ? 14 : filters.timeRange === '30d' ? 30 : undefined;
     const cutoff = days ? Date.parse(referenceTime) - days * 86400000 : Number.NEGATIVE_INFINITY;
+    const parsedFrom = filters.timeFrom ? Date.parse(filters.timeFrom) : Number.NEGATIVE_INFINITY;
+    const parsedTo = filters.timeTo ? Date.parse(filters.timeTo) : Number.POSITIVE_INFINITY;
+    const timeFrom = Number.isFinite(parsedFrom) ? parsedFrom : Number.NEGATIVE_INFINITY;
+    const timeTo = Number.isFinite(parsedTo) ? parsedTo : Number.POSITIVE_INFINITY;
     return records.filter((record) => {
-        const queryMatches = !filters.query?.trim() || [record.id, record.task.query, record.session.id, record.task.id, record.skill.id, ...record.traces?.map((trace) => trace.id) ?? [], ...record.logs.map((log) => log.id)].some((value) => includes(value, filters.query));
-        const traceMatches = !filters.traceId?.trim() || (record.traces ?? (record.trace ? [record.trace] : [])).some((trace) => includes(trace.id, filters.traceId));
-        if (!queryMatches || !includes(record.session.id, filters.sessionId) || !traceMatches || !includes(record.skill.id, filters.skillId) || !includes(record.skill.version, filters.skillVersion))
+        const searchableTraces = record.traceSpecific ? (record.trace ? [record.trace] : []) : record.traces ?? (record.trace ? [record.trace] : []);
+        const queryMatches = !filters.query?.trim() || [record.id, record.task.query, record.session.id, record.task.id, record.skill.id, ...record.identityAliases ?? [], ...searchableTraces.map((trace) => trace.id), ...record.logs.map((log) => log.id)].some((value) => includes(value, filters.query));
+        const traceMatches = !filters.traceId?.trim() || searchableTraces.some((trace) => includes(trace.id, filters.traceId)) || record.traceAliases?.some(alias => includes(alias, filters.traceId));
+        const sessionMatches = includes(record.session.id, filters.sessionId) || record.sessionAliases?.some(alias => includes(alias, filters.sessionId));
+        if (!queryMatches || !sessionMatches || !traceMatches || !includes(record.skill.id, filters.skillId) || !includes(record.skill.version, filters.skillVersion))
             return false;
-        if (Date.parse(record.task.timestamp) < cutoff)
+        const queryAt = Date.parse(record.task.timestamp);
+        if (queryAt < cutoff || queryAt < timeFrom || queryAt > timeTo)
             return false;
+        if (filters.timeWindowId && filters.timeWindowId !== 'CUSTOM' && !record.timeWindowRefs?.some(window => window.id === filters.timeWindowId)) return false;
+        if (filters.datasetId && !record.datasetRefs?.some(dataset => dataset.id === filters.datasetId)) return false;
+        const datasetCategoryFilter = filters.datasetCategory ?? filters.datasetClass;
+        if (datasetCategoryFilter && !record.datasetRefs?.some(dataset => dataset.category === datasetCategoryFilter)) return false;
+        if (filters.datasetPurpose && !record.datasetRefs?.some(dataset => matchesDatasetPurpose(dataset, filters.datasetPurpose!))) return false;
         if (filters.processEval && !matchesFinalScore(record.processFinalScore, filters.processEval, record.processSummary))
             return false;
         if (filters.outcomeEval && !matchesFinalScore(record.outcomeFinalScore, filters.outcomeEval, record.outcomeSummary))

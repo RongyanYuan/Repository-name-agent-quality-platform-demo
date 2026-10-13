@@ -3,9 +3,20 @@ import { validateEvolutionState } from './data/validation'
 import { upgradeMockFixtures } from './data/upgradeMockFixtures'
 import type { AlgorithmBadcaseItem, AuditEvent, BadcaseQueue, EvaluationBatch, EvaluationBatchStatus, EvaluationFinding, EvaluationJob, EvolutionState, RoutingDecision, RoutingDelivery, RoutingPolicy, TraceEvaluationPackage } from './domain'
 import { compressToUTF16, decompressFromUTF16 } from 'lz-string'
+import { canonicalizeIdentityState, resolveIdentity } from './identity'
+import { migrateLegacyModuleReviews } from './reviews'
+import { enrichAssetManagementFixtures } from './data/assetManagement'
 
 export { EVOLUTION_SCHEMA_VERSION }
 export const EVOLUTION_STORAGE_KEY = 'office-agent-evolution-governance:v1'
+
+/** Loading never overwrites data that fails migration or graph validation. */
+export class EvolutionLoadError extends Error {
+  constructor(readonly diagnostic: string, readonly rawData: string) {
+    super(`本地数据升级未完成，原数据已保留。${diagnostic}`)
+    this.name = 'EvolutionLoadError'
+  }
+}
 
 export interface EvolutionRepository {
   load(): EvolutionState
@@ -24,7 +35,7 @@ const SNAPSHOT_CODEC = 'office-agent-lz-utf16-v1'
 function serializeEnvelope(envelope: PersistedEnvelope): string {
   const snapshots = new Map<string, string>()
   return JSON.stringify(envelope, (key, value: unknown) => {
-    if (!['evaluationSnapshot', 'evalSnapshot'].includes(key) || !value || typeof value !== 'object') return value
+    if (!['evaluationSnapshot', 'evalSnapshot', 'configSnapshot', 'resultSnapshot', 'reportSnapshot', 'assetPerformanceRecords', 'assetEvolutionContributions'].includes(key) || !value || typeof value !== 'object') return value
     const serialized = JSON.stringify(value)
     if (serialized.length < 1024) return value
     const existingId = snapshots.get(serialized)
@@ -57,6 +68,8 @@ function parseEnvelope(raw: string): Partial<PersistedEnvelope> {
 
 function hydrateExperimentSnapshots(state: EvolutionState): EvolutionState {
   const hydrated = clone(state)
+  hydrated.datasetQueries ??= []
+  hydrated.datasetExecutionRuns ??= []
   const experimentById = new Map(hydrated.experiments.map((experiment) => [experiment.id, experiment]))
   hydrated.experimentRuns = hydrated.experimentRuns.map((run) => {
     const experiment = experimentById.get(run.experimentId)
@@ -87,11 +100,6 @@ const memoryStorage: Storage = {
   removeItem: (key) => { fallbackStorage.delete(key) }, setItem: (key, value) => { fallbackStorage.set(key, value) }
 }
 
-const schemaAudit = (at: string, id: string): AuditEvent => ({
-  id, at, actor: 'EvolutionRepository', action: 'SCHEMA_RESET', entityType: 'EvolutionState',
-  entityId: String(EVOLUTION_SCHEMA_VERSION), reason: '本地数据版本不兼容或损坏，已恢复为当前 Mock 演示数据。'
-})
-
 const migrationAudit = (at: string, id: string): AuditEvent => ({
   id, at, actor: 'EvolutionRepository', action: 'SCHEMA_MIGRATED', entityType: 'EvolutionState',
   entityId: '2', reason: '保留 V1 本地数据并补齐 V2 评测台账字段；未覆盖原有 Case、Trace、评测与审计记录。'
@@ -101,12 +109,12 @@ const migrationAudit = (at: string, id: string): AuditEvent => ({
  * creates a lightweight package/batch view so the new ledger can render old data. */
 function migrateV1State(raw: Partial<EvolutionState>, at: string, idFactory: () => string): EvolutionState | undefined {
   if (!Array.isArray(raw.cases) || !Array.isArray(raw.traces) || !Array.isArray(raw.sessions)) return undefined
-  const state = raw as EvolutionState
+  const state = canonicalizeIdentityState(raw as EvolutionState)
   const traceIds = state.traces.map((trace) => trace.id)
   const batchId = 'batch-migrated-v1'
   const seed = createInitialEvolutionData()
   const packages: TraceEvaluationPackage[] = state.traces.map((trace) => {
-    const seeded = seed.tracePackages.find((item) => item.traceId === trace.id)
+    const seeded = seed.tracePackages.find((item) => item.traceId === resolveIdentity(seed, 'trace', trace.id))
     if (seeded) return { ...clone(seeded), batchId, createdAt: trace.createdAt, updatedAt: at }
     return {
     id: `package-${trace.id}`, createdAt: trace.createdAt, updatedAt: at, batchId, caseId: trace.caseId, sessionId: trace.sessionId,
@@ -129,7 +137,7 @@ function migrateV1State(raw: Partial<EvolutionState>, at: string, idFactory: () 
   const migratedQueues: BadcaseQueue[] = seed.badcaseQueues.map((queue) => ({ ...clone(queue), itemIds: queue.itemIds.filter((id) => migratedBadcases.some((item) => item.id === id)), deliveryIds: queue.deliveryIds.filter((id) => deliveryIds.has(id)), updatedAt: at })).filter((queue) => queue.itemIds.length || queue.deliveryIds.length)
   const migratedAttributions = (Array.isArray(state.attributions) ? state.attributions : []).map((item) => ({ ...item, moduleCode: item.moduleCode ?? item.module.toUpperCase(), dimensionCode: item.dimensionCode ?? item.dimension.replace(/[^\p{Letter}\p{Number}]+/gu, '_').toUpperCase(), dimensionLabel: item.dimensionLabel ?? item.dimension, labelSnapshot: item.labelSnapshot ?? item.dimension, legacyRawLabel: item.legacyRawLabel ?? item.dimension, taxonomyVersion: item.taxonomyVersion ?? 'v1-legacy', updatedAt: at }))
   const auditTrail = [...(Array.isArray(state.auditTrail) ? state.auditTrail : []), migrationAudit(at, idFactory())]
-  return {
+  return enrichAssetManagementFixtures({
     ...state, schemaVersion: EVOLUTION_SCHEMA_VERSION, seedVersion: EVOLUTION_SEED_VERSION, updatedAt: at, auditTrail, attributions: migratedAttributions,
     evaluationBatches: Array.isArray(state.evaluationBatches) ? state.evaluationBatches : [batch],
     evaluationJobs: Array.isArray(state.evaluationJobs) ? state.evaluationJobs : jobs,
@@ -140,8 +148,9 @@ function migrateV1State(raw: Partial<EvolutionState>, at: string, idFactory: () 
     routingDeliveries: Array.isArray(state.routingDeliveries) ? state.routingDeliveries : migratedDeliveries,
     algorithmBadcases: Array.isArray(state.algorithmBadcases) ? state.algorithmBadcases : migratedBadcases,
     badcaseQueues: Array.isArray(state.badcaseQueues) ? state.badcaseQueues : migratedQueues,
-    tastePreferenceSignals: Array.isArray(state.tastePreferenceSignals) ? state.tastePreferenceSignals : seed.tastePreferenceSignals
-  }
+    tastePreferenceSignals: Array.isArray(state.tastePreferenceSignals) ? state.tastePreferenceSignals : seed.tastePreferenceSignals,
+    datasetSamplingSnapshots: Array.isArray(state.datasetSamplingSnapshots) ? state.datasetSamplingSnapshots : []
+  })
 }
 
 export function createLocalEvolutionRepository(options: RepositoryOptions = {}): EvolutionRepository {
@@ -150,13 +159,6 @@ export function createLocalEvolutionRepository(options: RepositoryOptions = {}):
   const now = options.now ?? (() => new Date().toISOString())
   const idFactory = options.idFactory ?? (() => `audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
   const persist = (state: EvolutionState) => storage.setItem(storageKey, serializeEnvelope({ schemaVersion: EVOLUTION_SCHEMA_VERSION, savedAt: now(), state } satisfies PersistedEnvelope))
-  const recover = () => {
-    const state = createInitialEvolutionData()
-    state.updatedAt = now()
-    state.auditTrail.push(schemaAudit(state.updatedAt, idFactory()))
-    persist(state)
-    return clone(state)
-  }
   return {
     load() {
       const raw = storage.getItem(storageKey)
@@ -168,20 +170,30 @@ export function createLocalEvolutionRepository(options: RepositoryOptions = {}):
       try {
         const envelope = parseEnvelope(raw)
         const envelopeState = envelope.state as Partial<EvolutionState> | undefined
-        if (!envelopeState || !Array.isArray(envelopeState.cases)) return recover()
-        const missingV2Arrays = !Array.isArray(envelopeState.evaluationBatches) || !Array.isArray(envelopeState.evaluationJobs) || !Array.isArray(envelopeState.tracePackages) || !Array.isArray(envelopeState.evaluationFindings) || !Array.isArray(envelopeState.routingPolicies) || !Array.isArray(envelopeState.routingDecisions) || !Array.isArray(envelopeState.routingDeliveries) || !Array.isArray(envelopeState.algorithmBadcases) || !Array.isArray(envelopeState.badcaseQueues) || !Array.isArray(envelopeState.tastePreferenceSignals)
+        if (!envelopeState || !Array.isArray(envelopeState.cases)) throw new Error('本地快照缺少有效 Case 数据')
+        const missingV2Arrays = !Array.isArray(envelopeState.evaluationBatches) || !Array.isArray(envelopeState.evaluationJobs) || !Array.isArray(envelopeState.tracePackages) || !Array.isArray(envelopeState.evaluationFindings) || !Array.isArray(envelopeState.routingPolicies) || !Array.isArray(envelopeState.routingDecisions) || !Array.isArray(envelopeState.routingDeliveries) || !Array.isArray(envelopeState.algorithmBadcases) || !Array.isArray(envelopeState.badcaseQueues) || !Array.isArray(envelopeState.tastePreferenceSignals) || !Array.isArray(envelopeState.datasetSamplingSnapshots) || !Array.isArray(envelopeState.assetCatalog) || !Array.isArray(envelopeState.assetVersions) || !Array.isArray(envelopeState.assetPerformanceRecords) || !Array.isArray(envelopeState.assetEvolutionContributions)
         if (envelope.schemaVersion !== EVOLUTION_SCHEMA_VERSION || envelopeState.schemaVersion !== EVOLUTION_SCHEMA_VERSION || missingV2Arrays) {
           const migrated = migrateV1State(envelopeState, now(), idFactory)
-          if (migrated && validateEvolutionState(migrated).length === 0) { persist(migrated); return hydrateExperimentSnapshots(migrated) }
-          return recover()
+          if (!migrated) throw new Error('旧版本快照缺少 Session 或 Trace 数据，无法安全迁移')
+          const hydrated = migrateLegacyModuleReviews(hydrateExperimentSnapshots(migrated))
+          const errors = validateEvolutionState(hydrated)
+          if (errors.length) throw new Error(errors.slice(0, 5).map(error => `${error.path}: ${error.message}`).join('；'))
+          persist(hydrated)
+          return hydrated
         }
         const hydrated = hydrateExperimentSnapshots(envelopeState as EvolutionState)
-        const upgraded = hydrated.seedVersion === EVOLUTION_SEED_VERSION ? hydrated : upgradeMockFixtures(hydrated, createInitialEvolutionData(), now(), idFactory())
-        if (validateEvolutionState(upgraded).length > 0) return recover()
-        if (upgraded !== hydrated) persist(upgraded)
+        const canonical = migrateLegacyModuleReviews(canonicalizeIdentityState(hydrated))
+        const base = canonical.seedVersion === EVOLUTION_SEED_VERSION ? canonical : upgradeMockFixtures(canonical, createInitialEvolutionData(), now(), idFactory())
+        // Asset projections predate fixed-version provenance in some saved
+        // demos. Repair only their generated fields, even at the same seed
+        // version; human reviews and frozen experiment reports are preserved.
+        const upgraded = enrichAssetManagementFixtures(base)
+        const errors = validateEvolutionState(upgraded)
+        if (errors.length) throw new Error(errors.slice(0, 5).map(error => `${error.path}: ${error.message}`).join('；'))
+        if (upgraded !== canonical || JSON.stringify(canonical) !== JSON.stringify(hydrated)) persist(upgraded)
         return upgraded
-      } catch {
-        return recover()
+      } catch (error) {
+        throw new EvolutionLoadError(error instanceof Error ? error.message : String(error), raw)
       }
     },
     save(state) { persist(clone(state)) },
